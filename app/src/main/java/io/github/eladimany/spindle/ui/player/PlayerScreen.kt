@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -19,8 +20,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -28,6 +33,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.ui.components.TrackArtwork
 
 @Composable
 fun PlayerScreen(
@@ -36,6 +42,15 @@ fun PlayerScreen(
 ) {
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
+    var showNowPlaying by remember { mutableStateOf(false) }
+
+    if (showNowPlaying) {
+        Column(modifier = modifier.fillMaxWidth()) {
+            TextButton(onClick = { showNowPlaying = false }) { Text("← Back") }
+            NowPlayingScreen(viewModel = viewModel)
+        }
+        return
+    }
 
     Column(modifier = modifier.fillMaxWidth()) {
         LazyColumn(modifier = Modifier.weight(1f)) {
@@ -44,6 +59,7 @@ fun PlayerScreen(
                     track = track,
                     isCurrent = currentTrackId(playbackState) == track.id,
                     onClick = { viewModel.playTrack(track) },
+                    fetchArtworkUri = viewModel::artworkUriFor,
                 )
                 HorizontalDivider()
             }
@@ -53,6 +69,8 @@ fun PlayerScreen(
             onTogglePlayPause = viewModel::togglePlayPause,
             onNext = viewModel::next,
             onPrevious = viewModel::previous,
+            onOpenNowPlaying = { showNowPlaying = true },
+            fetchArtworkUri = viewModel::artworkUriFor,
         )
     }
 }
@@ -66,7 +84,12 @@ private fun currentTrackId(state: PlaybackState): Long? = when (state) {
 }
 
 @Composable
-private fun TrackRow(track: Track, isCurrent: Boolean, onClick: () -> Unit) {
+private fun TrackRow(
+    track: Track,
+    isCurrent: Boolean,
+    onClick: () -> Unit,
+    fetchArtworkUri: suspend (Track) -> String?,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -74,7 +97,12 @@ private fun TrackRow(track: Track, isCurrent: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        TrackArtwork(
+            track = track,
+            fetchArtworkUri = fetchArtworkUri,
+            modifier = Modifier.size(48.dp),
+        )
+        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
             Text(
                 text = track.title,
                 style = MaterialTheme.typography.bodyLarge,
@@ -91,6 +119,8 @@ private fun MiniPlayerBar(
     onTogglePlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    onOpenNowPlaying: () -> Unit,
+    fetchArtworkUri: suspend (Track) -> String?,
 ) {
     val item = when (playbackState) {
         is PlaybackState.Playing -> playbackState.item
@@ -103,11 +133,17 @@ private fun MiniPlayerBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .clickable(onClick = onOpenNowPlaying)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            TrackArtwork(
+                track = item.track,
+                fetchArtworkUri = fetchArtworkUri,
+                modifier = Modifier.size(40.dp),
+            )
+            Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(item.track.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                 Text(item.track.artistName, style = MaterialTheme.typography.bodySmall, maxLines = 1)
             }

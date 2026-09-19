@@ -21,6 +21,9 @@ interface AlbumDao {
     @Query("SELECT * FROM albums WHERE id = :id")
     suspend fun getById(id: Long): AlbumEntity?
 
+    @Query("UPDATE albums SET artworkUri = :uri WHERE id = :albumId")
+    suspend fun updateArtworkUri(albumId: Long, uri: String)
+
     @Upsert
     suspend fun upsertAll(albums: List<AlbumEntity>)
 

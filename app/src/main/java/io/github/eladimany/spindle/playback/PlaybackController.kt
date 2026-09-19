@@ -9,10 +9,19 @@ import io.github.eladimany.spindle.core.model.QueueItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
+
+data class QueueState(
+    val items: List<QueueItem> = emptyList(),
+    val currentIndex: Int = -1,
+    val repeatMode: QueueManager.RepeatMode = QueueManager.RepeatMode.OFF,
+    val isShuffled: Boolean = false,
+)
 
 /**
  * Coordinates a [QueueManager] and one active [AudioOutput]. Deliberately doesn't know
@@ -29,10 +38,8 @@ class PlaybackController @Inject constructor(
 
     val playbackState: StateFlow<PlaybackState> = output.state
 
-    val queue: List<QueueItem> get() = queueManager.queue
-    val currentIndex: Int get() = queueManager.currentIndex
-    val repeatMode: QueueManager.RepeatMode get() = queueManager.repeatMode
-    val isShuffled: Boolean get() = queueManager.isShuffled
+    private val _queueState = MutableStateFlow(QueueState())
+    val queueState: StateFlow<QueueState> = _queueState.asStateFlow()
 
     init {
         scope.launch {
@@ -44,6 +51,7 @@ class PlaybackController @Inject constructor(
 
     fun playQueue(items: List<QueueItem>, startIndex: Int = 0) {
         queueManager.setQueue(items, startIndex)
+        refreshQueueState()
         queueManager.currentItem?.let { playItem(it) }
     }
 
@@ -63,9 +71,29 @@ class PlaybackController @Inject constructor(
         queueManager.previous()?.let { playItem(it) }
     }
 
-    fun setShuffled(enabled: Boolean) = queueManager.setShuffled(enabled)
+    fun jumpTo(queueItemId: String) {
+        queueManager.jumpTo(queueItemId)?.let { playItem(it) }
+    }
 
-    fun setRepeatMode(mode: QueueManager.RepeatMode) = queueManager.setRepeatMode(mode)
+    fun move(from: Int, to: Int) {
+        queueManager.move(from, to)
+        refreshQueueState()
+    }
+
+    fun remove(queueItemId: String) {
+        queueManager.remove(queueItemId)
+        refreshQueueState()
+    }
+
+    fun setShuffled(enabled: Boolean) {
+        queueManager.setShuffled(enabled)
+        refreshQueueState()
+    }
+
+    fun setRepeatMode(mode: QueueManager.RepeatMode) {
+        queueManager.setRepeatMode(mode)
+        refreshQueueState()
+    }
 
     fun seekTo(seconds: Int) {
         scope.launch { output.seek(seconds) }
@@ -77,6 +105,7 @@ class PlaybackController @Inject constructor(
 
     private fun advance() {
         val next = queueManager.onTrackEnded()
+        refreshQueueState()
         if (next != null) {
             playItem(next)
         } else {
@@ -85,8 +114,18 @@ class PlaybackController @Inject constructor(
     }
 
     private fun playItem(item: QueueItem) {
+        refreshQueueState()
         ensureServiceStarted()
         scope.launch { output.play(item) }
+    }
+
+    private fun refreshQueueState() {
+        _queueState.value = QueueState(
+            items = queueManager.queue,
+            currentIndex = queueManager.currentIndex,
+            repeatMode = queueManager.repeatMode,
+            isShuffled = queueManager.isShuffled,
+        )
     }
 
     private fun ensureServiceStarted() {
