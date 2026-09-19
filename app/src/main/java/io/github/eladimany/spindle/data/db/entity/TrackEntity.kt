@@ -10,6 +10,7 @@ import androidx.room.PrimaryKey
         Index("artistId"),
         Index("albumId"),
         Index("titleSortKey"),
+        Index("folderId"),
     ],
 )
 data class TrackEntity(
@@ -26,4 +27,6 @@ data class TrackEntity(
     val durationMs: Long,
     val year: Int?,
     val genre: String?,
+    val folderId: Long,
+    val folderName: String,
 )

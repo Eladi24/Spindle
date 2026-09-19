@@ -2,9 +2,11 @@ package io.github.eladimany.spindle.data.library
 
 import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Artist
+import io.github.eladimany.spindle.core.model.Folder
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.db.entity.AlbumEntity
 import io.github.eladimany.spindle.data.db.entity.ArtistEntity
+import io.github.eladimany.spindle.data.db.entity.FolderEntity
 import io.github.eladimany.spindle.data.db.entity.TrackEntity
 
 fun TrackEntity.toDomain() = Track(
@@ -37,4 +39,11 @@ fun ArtistEntity.toDomain() = Artist(
     name = name,
     albumCount = albumCount,
     trackCount = trackCount,
+)
+
+fun FolderEntity.toDomain(isExcluded: Boolean) = Folder(
+    id = id,
+    name = name,
+    trackCount = trackCount,
+    isExcluded = isExcluded,
 )

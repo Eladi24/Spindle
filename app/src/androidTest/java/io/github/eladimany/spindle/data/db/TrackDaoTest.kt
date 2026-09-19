@@ -44,6 +44,8 @@ class TrackDaoTest {
         durationMs = 200_000L,
         year = 2020,
         genre = "Rock",
+        folderId = (id % 10).toLong(),
+        folderName = "Folder ${id % 10}",
     )
 
     @Test

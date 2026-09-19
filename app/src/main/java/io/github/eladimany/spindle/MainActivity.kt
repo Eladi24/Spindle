@@ -3,6 +3,7 @@ package io.github.eladimany.spindle
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,6 +17,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -27,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
+import io.github.eladimany.spindle.ui.folders.FoldersScreen
 import io.github.eladimany.spindle.ui.library.MainUiState
 import io.github.eladimany.spindle.ui.library.MainViewModel
 import io.github.eladimany.spindle.ui.permission.AudioPermissionScreen
@@ -57,13 +60,24 @@ class MainActivity : ComponentActivity() {
                 }
 
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                var showFolders by remember { mutableStateOf(false) }
+                BackHandler(enabled = showFolders) { showFolders = false }
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    if (hasPermission) {
-                        LibrarySummary(uiState, modifier = Modifier.padding(innerPadding))
-                    } else {
-                        AudioPermissionScreen(
+                    when {
+                        !hasPermission -> AudioPermissionScreen(
                             onRequestPermission = { launcher.launch(audioLibraryPermission) },
+                            modifier = Modifier.padding(innerPadding),
+                        )
+
+                        showFolders -> Column(modifier = Modifier.padding(innerPadding)) {
+                            TextButton(onClick = { showFolders = false }) { Text("← Back") }
+                            FoldersScreen()
+                        }
+
+                        else -> LibrarySummary(
+                            state = uiState,
+                            onManageFolders = { showFolders = true },
                             modifier = Modifier.padding(innerPadding),
                         )
                     }
@@ -74,7 +88,11 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun LibrarySummary(state: MainUiState, modifier: Modifier = Modifier) {
+private fun LibrarySummary(
+    state: MainUiState,
+    onManageFolders: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -91,5 +109,6 @@ private fun LibrarySummary(state: MainUiState, modifier: Modifier = Modifier) {
             Text("${state.artistCount} artists")
             state.lastScanMs?.let { Text("Last scan: ${it}ms") }
         }
+        TextButton(onClick = onManageFolders) { Text("Manage folders") }
     }
 }

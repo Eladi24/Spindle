@@ -10,6 +10,7 @@ import dagger.hilt.components.SingletonComponent
 import io.github.eladimany.spindle.data.db.AppDatabase
 import io.github.eladimany.spindle.data.db.dao.AlbumDao
 import io.github.eladimany.spindle.data.db.dao.ArtistDao
+import io.github.eladimany.spindle.data.db.dao.FolderDao
 import io.github.eladimany.spindle.data.db.dao.PlaylistDao
 import io.github.eladimany.spindle.data.db.dao.TrackDao
 import javax.inject.Singleton
@@ -37,4 +38,7 @@ object DatabaseModule {
 
     @Provides
     fun providePlaylistDao(db: AppDatabase): PlaylistDao = db.playlistDao()
+
+    @Provides
+    fun provideFolderDao(db: AppDatabase): FolderDao = db.folderDao()
 }

@@ -9,14 +9,19 @@ import androidx.paging.PagingSource
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Artist
+import io.github.eladimany.spindle.core.model.Folder
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.db.dao.AlbumDao
 import io.github.eladimany.spindle.data.db.dao.ArtistDao
+import io.github.eladimany.spindle.data.db.dao.FolderDao
 import io.github.eladimany.spindle.data.db.dao.TrackDao
 import io.github.eladimany.spindle.data.db.entity.TrackEntity
+import io.github.eladimany.spindle.data.prefs.SettingsRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
@@ -28,11 +33,18 @@ class LibraryRepository @Inject constructor(
     private val trackDao: TrackDao,
     private val albumDao: AlbumDao,
     private val artistDao: ArtistDao,
+    private val folderDao: FolderDao,
     private val scanner: MediaStoreScanner,
+    private val settings: SettingsRepository,
 ) {
     val tracks: Flow<List<Track>> = trackDao.observeAll().map { list -> list.map { it.toDomain() } }
     val albums: Flow<List<Album>> = albumDao.observeAll().map { list -> list.map { it.toDomain() } }
     val artists: Flow<List<Artist>> = artistDao.observeAll().map { list -> list.map { it.toDomain() } }
+
+    /** Every folder MediaStore found, flagged with whether it's excluded from the library. */
+    val folders: Flow<List<Folder>> = combine(folderDao.observeAll(), settings.excludedFolderIds) { folders, excluded ->
+        folders.map { it.toDomain(isExcluded = it.id in excluded) }
+    }
 
     fun tracksPagingSource(): PagingSource<Int, TrackEntity> = trackDao.pagingSource()
 
@@ -48,16 +60,24 @@ class LibraryRepository @Inject constructor(
     fun search(query: String): Flow<List<Track>> =
         trackDao.search(query).map { list -> list.map { it.toDomain() } }
 
+    /** Toggles a folder's inclusion. Callers should [rescan] afterward to apply it. */
+    suspend fun setFolderExcluded(folderId: Long, excluded: Boolean) {
+        settings.setFolderExcluded(folderId, excluded)
+    }
+
     /** Runs a full MediaStore scan and persists the result, replacing anything removed. */
     fun rescan(): Flow<ScanProgress> = flow {
-        scanner.scan().collect { progress ->
+        val excludedFolderIds = settings.excludedFolderIds.first()
+        scanner.scan(excludedFolderIds).collect { progress ->
             if (progress is ScanProgress.Complete) {
                 trackDao.upsertAll(progress.result.tracks)
                 albumDao.upsertAll(progress.result.albums)
                 artistDao.upsertAll(progress.result.artists)
+                folderDao.upsertAll(progress.result.folders)
                 trackDao.deleteMissing(progress.result.tracks.map { it.id })
                 albumDao.deleteMissing(progress.result.albums.map { it.id })
                 artistDao.deleteMissing(progress.result.artists.map { it.id })
+                folderDao.deleteMissing(progress.result.folders.map { it.id })
             }
             emit(progress)
         }
