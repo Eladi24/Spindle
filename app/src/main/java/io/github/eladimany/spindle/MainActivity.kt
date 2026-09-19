@@ -12,6 +12,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +35,7 @@ import io.github.eladimany.spindle.ui.library.MainUiState
 import io.github.eladimany.spindle.ui.library.MainViewModel
 import io.github.eladimany.spindle.ui.permission.AudioPermissionScreen
 import io.github.eladimany.spindle.ui.permission.audioLibraryPermission
+import io.github.eladimany.spindle.ui.player.PlayerScreen
 import io.github.eladimany.spindle.ui.theme.SpindleTheme
 
 @AndroidEntryPoint
@@ -75,11 +77,13 @@ class MainActivity : ComponentActivity() {
                             FoldersScreen()
                         }
 
-                        else -> LibrarySummary(
-                            state = uiState,
-                            onManageFolders = { showFolders = true },
-                            modifier = Modifier.padding(innerPadding),
-                        )
+                        else -> Column(modifier = Modifier.padding(innerPadding)) {
+                            LibrarySummary(
+                                state = uiState,
+                                onManageFolders = { showFolders = true },
+                            )
+                            PlayerScreen(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -95,19 +99,16 @@ private fun LibrarySummary(
 ) {
     Column(
         modifier = modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         Text("Spindle", style = MaterialTheme.typography.headlineMedium)
         if (state.isScanning) {
             CircularProgressIndicator()
             Text("Scanning… ${state.scannedCount} tracks so far")
         } else {
-            Text("${state.trackCount} tracks")
-            Text("${state.albumCount} albums")
-            Text("${state.artistCount} artists")
-            state.lastScanMs?.let { Text("Last scan: ${it}ms") }
+            Text("${state.trackCount} tracks · ${state.albumCount} albums · ${state.artistCount} artists")
         }
         TextButton(onClick = onManageFolders) { Text("Manage folders") }
     }
