@@ -13,4 +13,5 @@ data class Track(
     val durationMs: Long,
     val year: Int?,
     val genre: String?,
+    val dateAddedMs: Long,
 )

@@ -27,6 +27,9 @@ interface PlaylistDao {
     @Delete
     suspend fun delete(playlist: PlaylistEntity)
 
+    @Query("DELETE FROM playlists WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Query(
         "SELECT t.* FROM tracks t " +
             "INNER JOIN playlist_track_cross_ref x ON x.trackId = t.id " +

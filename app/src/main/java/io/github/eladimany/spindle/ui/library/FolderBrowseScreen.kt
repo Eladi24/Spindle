@@ -1,0 +1,63 @@
+package io.github.eladimany.spindle.ui.library
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
+@Composable
+fun FolderBrowseScreen(
+    onFolderClick: (Long) -> Unit,
+    onManageFolders: () -> Unit,
+    modifier: Modifier = Modifier,
+    viewModel: FolderBrowseViewModel = hiltViewModel(),
+) {
+    val folders by viewModel.folders.collectAsStateWithLifecycle()
+
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            TopAppBar(
+                title = { Text("Folders") },
+                actions = {
+                    IconButton(onClick = onManageFolders) {
+                        Icon(Icons.Default.Settings, contentDescription = "Manage folders")
+                    }
+                },
+            )
+        },
+    ) { innerPadding ->
+        LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            items(folders, key = { it.id }) { folder ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onFolderClick(folder.id) }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                ) {
+                    Text(folder.name, style = MaterialTheme.typography.bodyLarge)
+                    Text("${folder.trackCount} tracks", style = MaterialTheme.typography.bodySmall)
+                }
+                HorizontalDivider()
+            }
+        }
+    }
+}

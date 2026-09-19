@@ -29,4 +29,5 @@ data class TrackEntity(
     val genre: String?,
     val folderId: Long,
     val folderName: String,
+    val dateAddedMs: Long,
 )

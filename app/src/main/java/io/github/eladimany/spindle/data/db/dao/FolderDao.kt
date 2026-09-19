@@ -11,6 +11,9 @@ interface FolderDao {
     @Query("SELECT * FROM folders ORDER BY name")
     fun observeAll(): Flow<List<FolderEntity>>
 
+    @Query("SELECT * FROM folders WHERE id = :id")
+    suspend fun getById(id: Long): FolderEntity?
+
     @Upsert
     suspend fun upsertAll(folders: List<FolderEntity>)
 

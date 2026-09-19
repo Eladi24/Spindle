@@ -13,7 +13,22 @@ interface TrackDao {
     fun observeAll(): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks ORDER BY titleSortKey")
-    fun pagingSource(): PagingSource<Int, TrackEntity>
+    fun pagingSourceByTitle(): PagingSource<Int, TrackEntity>
+
+    @Query("SELECT * FROM tracks ORDER BY dateAddedMs DESC")
+    fun pagingSourceByDateAdded(): PagingSource<Int, TrackEntity>
+
+    @Query("SELECT * FROM tracks ORDER BY year DESC, titleSortKey")
+    fun pagingSourceByYear(): PagingSource<Int, TrackEntity>
+
+    @Query("SELECT * FROM tracks ORDER BY titleSortKey")
+    suspend fun getAllByTitle(): List<TrackEntity>
+
+    @Query("SELECT * FROM tracks ORDER BY dateAddedMs DESC")
+    suspend fun getAllByDateAdded(): List<TrackEntity>
+
+    @Query("SELECT * FROM tracks ORDER BY year DESC, titleSortKey")
+    suspend fun getAllByYear(): List<TrackEntity>
 
     @Query("SELECT * FROM tracks WHERE albumId = :albumId ORDER BY discNumber, trackNumber")
     fun observeByAlbum(albumId: Long): Flow<List<TrackEntity>>
@@ -21,11 +36,17 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE artistId = :artistId ORDER BY titleSortKey")
     fun observeByArtist(artistId: Long): Flow<List<TrackEntity>>
 
+    @Query("SELECT * FROM tracks WHERE folderId = :folderId ORDER BY titleSortKey")
+    fun observeByFolder(folderId: Long): Flow<List<TrackEntity>>
+
     @Query("SELECT * FROM tracks WHERE title LIKE '%' || :query || '%' ORDER BY titleSortKey LIMIT :limit")
     fun search(query: String, limit: Int = 50): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun getById(id: Long): TrackEntity?
+
+    @Query("SELECT * FROM tracks WHERE albumId = :albumId LIMIT 1")
+    suspend fun firstTrackForAlbum(albumId: Long): TrackEntity?
 
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun count(): Int

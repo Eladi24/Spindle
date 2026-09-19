@@ -23,7 +23,7 @@ import io.github.eladimany.spindle.data.db.entity.TrackEntity
         PlaylistTrackCrossRef::class,
         FolderEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

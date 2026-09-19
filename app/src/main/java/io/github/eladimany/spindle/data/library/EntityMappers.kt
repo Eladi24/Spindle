@@ -22,6 +22,7 @@ fun TrackEntity.toDomain() = Track(
     durationMs = durationMs,
     year = year,
     genre = genre,
+    dateAddedMs = dateAddedMs,
 )
 
 fun AlbumEntity.toDomain() = Album(

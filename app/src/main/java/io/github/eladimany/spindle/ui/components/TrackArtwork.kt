@@ -16,12 +16,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
+import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Track
 
 /**
- * Shows a track's album artwork, extracted lazily and cached — see [ArtworkRepository][
+ * Album artwork, extracted lazily and cached — see [ArtworkRepository][
  * io.github.eladimany.spindle.data.library.ArtworkRepository]. Falls back to a plain
- * icon while loading or when the track has no embedded art.
+ * icon while loading or when there's no embedded art.
  */
 @Composable
 fun TrackArtwork(
@@ -30,8 +31,38 @@ fun TrackArtwork(
     modifier: Modifier = Modifier,
     cornerRadiusDp: Int = 8,
 ) {
-    val artworkUri by produceState<String?>(initialValue = null, track.albumId) {
-        value = fetchArtworkUri(track)
+    ArtworkBox(
+        key = track.albumId,
+        fetchUri = { fetchArtworkUri(track) },
+        modifier = modifier,
+        cornerRadiusDp = cornerRadiusDp,
+    )
+}
+
+@Composable
+fun AlbumArtwork(
+    album: Album,
+    fetchArtworkUri: suspend (Album) -> String?,
+    modifier: Modifier = Modifier,
+    cornerRadiusDp: Int = 8,
+) {
+    ArtworkBox(
+        key = album.id,
+        fetchUri = { fetchArtworkUri(album) },
+        modifier = modifier,
+        cornerRadiusDp = cornerRadiusDp,
+    )
+}
+
+@Composable
+private fun ArtworkBox(
+    key: Any,
+    fetchUri: suspend () -> String?,
+    modifier: Modifier,
+    cornerRadiusDp: Int,
+) {
+    val artworkUri by produceState<String?>(initialValue = null, key) {
+        value = fetchUri()
     }
 
     Box(

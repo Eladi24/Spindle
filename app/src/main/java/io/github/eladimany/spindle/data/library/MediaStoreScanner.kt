@@ -78,6 +78,7 @@ class MediaStoreScanner @Inject constructor(
             MediaStore.Audio.Media.YEAR,
             MediaStore.Audio.Media.BUCKET_ID,
             MediaStore.Audio.Media.BUCKET_DISPLAY_NAME,
+            MediaStore.Audio.Media.DATE_ADDED,
         )
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
 
@@ -99,6 +100,7 @@ class MediaStoreScanner @Inject constructor(
             val yearCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.YEAR)
             val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.BUCKET_ID)
             val bucketNameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME)
+            val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
@@ -111,6 +113,7 @@ class MediaStoreScanner @Inject constructor(
                 val year = cursor.getInt(yearCol).takeIf { it > 0 }
                 val folderId = cursor.getLong(bucketIdCol)
                 val folderName = cursor.getString(bucketNameCol) ?: "Unknown folder"
+                val dateAddedMs = cursor.getLong(dateAddedCol) * 1000
 
                 // MediaStore packs disc+track as disc*1000+track when disc info exists.
                 val rawTrack = cursor.getInt(trackCol)
@@ -144,6 +147,7 @@ class MediaStoreScanner @Inject constructor(
                     genre = null,
                     folderId = folderId,
                     folderName = folderName,
+                    dateAddedMs = dateAddedMs,
                 )
 
                 var albumAcc = albums[albumId]

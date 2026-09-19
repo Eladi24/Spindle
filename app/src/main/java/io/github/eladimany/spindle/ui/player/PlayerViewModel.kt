@@ -1,40 +1,28 @@
 package io.github.eladimany.spindle.ui.player
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.PlaybackState
-import io.github.eladimany.spindle.core.model.QueueItem
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.library.ArtworkRepository
-import io.github.eladimany.spindle.data.library.LibraryRepository
 import io.github.eladimany.spindle.playback.PlaybackController
 import io.github.eladimany.spindle.playback.QueueManager
 import io.github.eladimany.spindle.playback.QueueState
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 
+/**
+ * Shared playback UI state — the mini-player bar and Now Playing screen both use the
+ * same (Activity-scoped) instance, since there's only ever one active queue.
+ */
 @HiltViewModel
 class PlayerViewModel @Inject constructor(
     private val controller: PlaybackController,
     private val artworkRepository: ArtworkRepository,
-    libraryRepository: LibraryRepository,
 ) : ViewModel() {
 
     val playbackState: StateFlow<PlaybackState> = controller.playbackState
     val queueState: StateFlow<QueueState> = controller.queueState
-
-    val tracks: StateFlow<List<Track>> = libraryRepository.tracks
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-
-    fun playTrack(track: Track) {
-        val library = tracks.value
-        val startIndex = library.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-        val queueItems = library.map { QueueItem(id = "q${it.id}", track = it) }
-        controller.playQueue(queueItems, startIndex)
-    }
 
     fun togglePlayPause() = controller.togglePlayPause()
     fun next() = controller.next()

@@ -6,6 +6,7 @@ import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.QueueItem
+import io.github.eladimany.spindle.core.model.Track
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -53,6 +54,11 @@ class PlaybackController @Inject constructor(
         queueManager.setQueue(items, startIndex)
         refreshQueueState()
         queueManager.currentItem?.let { playItem(it) }
+    }
+
+    /** Convenience for screens that just have a list of tracks to play, in order. */
+    fun playTracks(tracks: List<Track>, startIndex: Int = 0) {
+        playQueue(tracks.map { QueueItem(id = "q${it.id}", track = it) }, startIndex)
     }
 
     fun togglePlayPause() {

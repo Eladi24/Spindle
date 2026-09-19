@@ -26,6 +26,7 @@ class QueueManagerTest {
         durationMs = 200_000L,
         year = 2020,
         genre = null,
+        dateAddedMs = 1_700_000_000_000L,
     )
 
     @Before
