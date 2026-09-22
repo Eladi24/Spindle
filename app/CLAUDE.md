@@ -143,6 +143,19 @@ built into the local-only path.
   works fine in principle (verified via `adb shell input draganddrop` hitting
   its exact bounds) but is unreliable for an actual finger — wrap it in a
   `Box(Modifier.size(48.dp))`.
+- **Same modifier-chain-identity trap, one level up: don't toggle
+  `LazyColumn`'s `userScrollEnabled` based on drag state either.** This looked
+  like a reasonable idea (stop the list's own scroll from competing with an
+  active drag) but flipping it the moment `onDragStart` fires changes the
+  *LazyColumn's own* modifier chain while a descendant's `pointerInput` is
+  mid-gesture — same class of cancellation as the `animateItem()` issue above.
+  Symptom was subtle: worked for a short drag, silently died partway through a
+  longer one (more time for the recomposition to actually land mid-gesture).
+  Fixed by just not touching `userScrollEnabled` — the drag handle's own
+  `pointerInput` consuming the drag is enough. Gave the dragged row a visible
+  lifted state (`shadow`, `scale`, `primaryContainer` background, tinted
+  handle icon) driven purely by `isDragging`, since there'd been no feedback
+  at all before.
 
 ## Package layout (current)
 

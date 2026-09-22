@@ -34,6 +34,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -89,10 +91,12 @@ fun QueueScreen(
         }
 
         LazyColumn(
+            // Deliberately NOT toggling userScrollEnabled based on drag state: that's
+            // the same class of bug as the animateItem() modifier-chain-identity issue
+            // below, just one level up — flipping it mid-gesture changes the LazyColumn's
+            // own modifier chain while a descendant's pointerInput is active, which can
+            // tear down and cancel that gesture partway through a longer drag.
             modifier = Modifier.padding(innerPadding).fillMaxSize(),
-            // Disabled while dragging so the list's own scroll gesture can't compete
-            // with the drag once it's active.
-            userScrollEnabled = draggingId == null,
         ) {
             itemsIndexed(displayItems, key = { _, item -> item.id }) { _, item ->
                 val isDragging = item.id == draggingId
@@ -184,8 +188,17 @@ private fun QueueRow(
             .onGloballyPositioned { onMeasuredHeight(it.size.height.toFloat()) }
             .graphicsLayer { translationY = dragOffsetY }
             .zIndex(if (isDragging) 1f else 0f)
+            // Lifted look while actively dragging — a real elevation shadow plus a
+            // slight scale-up, so grabbing a row is unmistakable even mid-gesture,
+            // not just a color tweak that's easy to miss out of the corner of an eye.
+            .scale(if (isDragging) 1.02f else 1f)
+            .shadow(elevation = if (isDragging) 6.dp else 0.dp)
             .background(
-                if (isCurrent) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.background,
+                when {
+                    isDragging -> MaterialTheme.colorScheme.primaryContainer
+                    isCurrent -> MaterialTheme.colorScheme.surfaceVariant
+                    else -> MaterialTheme.colorScheme.background
+                },
             )
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -234,7 +247,11 @@ private fun QueueRow(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Default.DragHandle, contentDescription = "Drag to reorder")
+            Icon(
+                Icons.Default.DragHandle,
+                contentDescription = "Drag to reorder",
+                tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
