@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Direct Vibrator access for slider haptic ticks — the semantic
+         HapticFeedbackType route (View.performHapticFeedback) needs no
+         permission but rendered SEGMENT_TICK too weak to feel on-device. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:name=".App"
