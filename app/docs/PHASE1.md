@@ -125,14 +125,20 @@ repeat-one.
 from the app, across many test cycles on the A73. Headphone-unplug-pauses is
 untested (no headphones were plugged in during testing).
 
-## 9. Now Playing — mostly complete
+## 9. Now Playing ✅ COMPLETE
 
 - [x] Artwork, title/artist/album, progress bar with scrubbing
 - [x] Play/pause/next/previous, shuffle and repeat toggles
-- [ ] Queue screen: reorder by drag, remove, jump to track — **UI not built.**
-      `PlaybackController.move()`/`remove()`/`jumpTo()` already exist for this.
+- [x] Queue screen: reorder by drag (smooth via `animateItem()`, half-item
+      hysteresis), remove, jump to track — reachable from a queue icon on
+      Now Playing
 - [x] Progress interpolated locally (`positionMs` + elapsed since
       `capturedAtMs`) — matters in Phase 2, habit is already built
+
+**Extra, not in the original plan:** volume control (mute toggle + slider).
+`AudioOutput.setVolume()` already existed for Phase 2's Node output; this
+just adds the UI and an app-side `StateFlow<Int>` to track the last-set level
+(neither `AudioOutput` nor the future Node have a way to report it back).
 
 ## 10. Playlists — stub only, most of this is still open
 
