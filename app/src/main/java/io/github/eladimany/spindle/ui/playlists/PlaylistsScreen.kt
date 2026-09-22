@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -35,6 +36,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 @Composable
 fun PlaylistsScreen(
     onPlaylistClick: (Long) -> Unit,
+    onSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PlaylistsViewModel = hiltViewModel(),
 ) {
@@ -43,7 +45,16 @@ fun PlaylistsScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("Playlists") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Playlists") },
+                actions = {
+                    IconButton(onClick = onSearchClick) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                },
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = { showCreateDialog = true }) {
                 Icon(Icons.Default.Add, contentDescription = "New playlist")

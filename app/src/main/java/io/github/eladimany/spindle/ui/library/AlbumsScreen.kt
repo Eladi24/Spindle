@@ -10,6 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -25,6 +29,7 @@ import io.github.eladimany.spindle.ui.components.AlbumArtwork
 @Composable
 fun AlbumsScreen(
     onAlbumClick: (Long) -> Unit,
+    onSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: AlbumsViewModel = hiltViewModel(),
 ) {
@@ -32,7 +37,16 @@ fun AlbumsScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("Albums") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Albums") },
+                actions = {
+                    IconButton(onClick = onSearchClick) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                },
+            )
+        },
     ) { innerPadding ->
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 140.dp),

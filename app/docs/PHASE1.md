@@ -85,14 +85,18 @@ Phase 0 is still open.
 **Check:** not yet done on the S25+ or against the full library — only tested
 against the A73's small local set so far.
 
-## 6. Search — NOT STARTED
+## 6. Search ✅ COMPLETE
 
-- [ ] Single search field across artist / album / title
-- [ ] Room FTS or `LIKE` with an index — measure before choosing
-- [ ] Debounced input, results grouped by type
+- [x] Single search field across artist / album / title
+- [x] `LIKE` queries with the existing sort-key/name indices — fine at this
+      library size; revisit FTS only if it's ever measurably slow
+- [x] Debounced input (250ms), results grouped by type (Artists/Albums/Tracks)
 
-`TrackDao.search()` (a `LIKE` query) already exists from Phase 0-era scaffolding
-but nothing calls it yet.
+Reachable via a search icon on every top-level screen's TopAppBar
+(Tracks/Artists/Albums/Folders/Playlists), not a bottom tab — no room left
+in the 5-tab bar. `SearchViewModel` combines three debounced DAO queries;
+tapping an artist/album navigates to its detail screen, tapping a track
+plays the search results as the queue.
 
 ## 7. Queue and playback logic ✅ COMPLETE
 

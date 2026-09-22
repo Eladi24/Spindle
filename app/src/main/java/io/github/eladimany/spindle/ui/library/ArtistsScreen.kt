@@ -7,7 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -22,6 +26,7 @@ import androidx.paging.compose.itemKey
 @Composable
 fun ArtistsScreen(
     onArtistClick: (Long) -> Unit,
+    onSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: ArtistsViewModel = hiltViewModel(),
 ) {
@@ -29,7 +34,16 @@ fun ArtistsScreen(
 
     Scaffold(
         modifier = modifier,
-        topBar = { TopAppBar(title = { Text("Artists") }) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Artists") },
+                actions = {
+                    IconButton(onClick = onSearchClick) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
+                },
+            )
+        },
     ) { innerPadding ->
         LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
             items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->

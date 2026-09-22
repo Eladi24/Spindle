@@ -93,6 +93,12 @@ class LibraryRepository @Inject constructor(
     fun search(query: String): Flow<List<Track>> =
         trackDao.search(query).map { list -> list.map { it.toDomain() } }
 
+    fun searchArtists(query: String): Flow<List<Artist>> =
+        artistDao.search(query).map { list -> list.map { it.toDomain() } }
+
+    fun searchAlbums(query: String): Flow<List<Album>> =
+        albumDao.search(query).map { list -> list.map { it.toDomain() } }
+
     /** Toggles a folder's inclusion. Callers should [rescan] afterward to apply it. */
     suspend fun setFolderExcluded(folderId: Long, excluded: Boolean) {
         settings.setFolderExcluded(folderId, excluded)

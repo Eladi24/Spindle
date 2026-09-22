@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -27,6 +28,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 fun FolderBrowseScreen(
     onFolderClick: (Long) -> Unit,
     onManageFolders: () -> Unit,
+    onSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: FolderBrowseViewModel = hiltViewModel(),
 ) {
@@ -38,6 +40,9 @@ fun FolderBrowseScreen(
             TopAppBar(
                 title = { Text("Folders") },
                 actions = {
+                    IconButton(onClick = onSearchClick) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
                     IconButton(onClick = onManageFolders) {
                         Icon(Icons.Default.Settings, contentDescription = "Manage folders")
                     }

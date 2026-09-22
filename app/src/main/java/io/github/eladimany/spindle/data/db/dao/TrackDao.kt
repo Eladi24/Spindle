@@ -39,7 +39,15 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE folderId = :folderId ORDER BY titleSortKey")
     fun observeByFolder(folderId: Long): Flow<List<TrackEntity>>
 
-    @Query("SELECT * FROM tracks WHERE title LIKE '%' || :query || '%' ORDER BY titleSortKey LIMIT :limit")
+    @Query(
+        """
+        SELECT * FROM tracks
+        WHERE title LIKE '%' || :query || '%'
+           OR artistName LIKE '%' || :query || '%'
+           OR albumName LIKE '%' || :query || '%'
+        ORDER BY titleSortKey LIMIT :limit
+        """,
+    )
     fun search(query: String, limit: Int = 50): Flow<List<TrackEntity>>
 
     @Query("SELECT * FROM tracks WHERE id = :id")

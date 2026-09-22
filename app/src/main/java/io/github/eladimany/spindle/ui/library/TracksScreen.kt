@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -38,6 +39,7 @@ import io.github.eladimany.spindle.ui.components.TrackRow
 
 @Composable
 fun TracksScreen(
+    onSearchClick: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: TracksViewModel = hiltViewModel(),
 ) {
@@ -52,6 +54,9 @@ fun TracksScreen(
             TopAppBar(
                 title = { Text("Tracks") },
                 actions = {
+                    IconButton(onClick = onSearchClick) {
+                        Icon(Icons.Default.Search, contentDescription = "Search")
+                    }
                     IconButton(onClick = { showSortMenu = true }) {
                         Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
                     }

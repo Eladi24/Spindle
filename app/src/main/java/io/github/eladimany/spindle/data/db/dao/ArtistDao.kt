@@ -18,6 +18,9 @@ interface ArtistDao {
     @Query("SELECT * FROM artists WHERE id = :id")
     suspend fun getById(id: Long): ArtistEntity?
 
+    @Query("SELECT * FROM artists WHERE name LIKE '%' || :query || '%' ORDER BY nameSortKey LIMIT :limit")
+    fun search(query: String, limit: Int = 20): Flow<List<ArtistEntity>>
+
     @Upsert
     suspend fun upsertAll(artists: List<ArtistEntity>)
 

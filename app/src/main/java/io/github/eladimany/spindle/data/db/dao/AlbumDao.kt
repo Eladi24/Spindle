@@ -21,6 +21,12 @@ interface AlbumDao {
     @Query("SELECT * FROM albums WHERE id = :id")
     suspend fun getById(id: Long): AlbumEntity?
 
+    @Query(
+        "SELECT * FROM albums WHERE name LIKE '%' || :query || '%' OR artistName LIKE '%' || :query || '%' " +
+            "ORDER BY nameSortKey LIMIT :limit",
+    )
+    fun search(query: String, limit: Int = 20): Flow<List<AlbumEntity>>
+
     @Query("UPDATE albums SET artworkUri = :uri WHERE id = :albumId")
     suspend fun updateArtworkUri(albumId: Long, uri: String)
 
