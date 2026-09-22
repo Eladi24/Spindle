@@ -563,7 +563,11 @@ io/github/eladimany/spindle/
 │   ├── library/             MediaStoreScanner, LibraryRepository,
 │   │                        ArtworkExtractor, ArtworkRepository, EntityMappers
 │   ├── playlists/           PlaylistRepository
-│   └── prefs/               SettingsRepository (DataStore — folder exclusions)
+│   ├── prefs/               SettingsRepository (DataStore — folder exclusions)
+│   ├── server/              MediaHttpServer, TokenRegistry, HttpRange,
+│   │                        NetworkAddress (Phase 2, see below)
+│   └── bluos/               BluOsClient, BluOsXmlParser, BluOsStatus,
+│                            BluOsDiscovery (Phase 2, see below)
 ├── playback/                AudioOutput, MediaSource, LocalOutput, QueueManager,
 │                            PlaybackController, PlaybackService
 └── ui/
@@ -580,8 +584,117 @@ io/github/eladimany/spindle/
     └── playlists/           PlaylistsScreen/VM, PlaylistDetailScreen/VM
 ```
 
-`NodeOutput`, `MediaHttpServer`, `TokenRegistry`, `BluOsClient`,
-`BluOsDiscovery` don't exist yet — Phase 2.
+`NodeOutput` doesn't exist yet — the last piece of Phase 2, wiring
+`BluOsClient` + `MediaHttpServer` together into an `AudioOutput`.
+`MediaHttpServer`/`TokenRegistry`/`BluOsClient`/`BluOsDiscovery` are built —
+see below.
+
+### Phase 2 — MediaHttpServer + TokenRegistry — 2026-09-22
+
+First slice of Phase 2: the file-serving half, independent of `BluOsClient`/
+discovery. Verified by unit test and a clean `assembleDebug`; **not yet
+exercised against the real Node** — that needs `NodeOutput` wired up to
+actually issue a `/Play?url=` at one of these URLs.
+
+- Added the `ktor-server-core` / `ktor-server-cio` dependencies (pinned
+  `3.5.2` — compiles clean against Kotlin 2.2.10, no stdlib-version trap like
+  Coil's). `INTERNET` and `ACCESS_NETWORK_STATE` added to the manifest.
+- `TokenRegistry` — in-memory `UUID → content-URI-string` map. `tokenFor()`
+  issues a fresh token per call (not idempotent per URI — cheap, and a track
+  is re-resolved at most once per play, not per queue build). `clear()` drops
+  everything; not wired to a call site yet — that belongs to whatever in
+  `NodeOutput`/`PlaybackController` owns "the queue changed," not to the
+  server itself.
+- `MediaHttpServer` — Ktor CIO `embeddedServer`, started with `port = 0` and
+  the actual bound port read back via `embedded.engine.resolvedConnectors()`
+  (a suspend member on `ApplicationEngine`, not a top-level import — cost a
+  compile error the first time). Serves `GET /t/{token}`, resolving through
+  `TokenRegistry` and opening the URI via
+  `ContentResolver.openFileDescriptor` — real `FileInputStream` off the fd's
+  descriptor so `FileChannel.position(start)` can seek, rather than an
+  `AssetFileDescriptor` stream (which doesn't reliably expose a seekable
+  channel for content URIs). `start(host)` takes the WLAN IP explicitly
+  (from `NetworkAddress`) — never binds `0.0.0.0` (hard constraint: don't let
+  the server answer on any interface but the LAN one, e.g. a VPN).
+- `HttpRange` — pulled the `Range: bytes=start-end` parsing out to its own
+  file with zero Android imports specifically so the EOF-clamp logic (hard
+  constraint #4) gets real unit tests, same reasoning as `QueueManager`.
+  Handles bounded (`bytes=100-499`), open-ended (`bytes=500-`), and suffix
+  (`bytes=-500`) forms; a multi-range header uses only the first range (the
+  Node has never been observed sending more than one). 12 tests in
+  `HttpRangeTest`, including the actual overshoot-past-EOF case the hard
+  constraint exists for.
+- `NetworkAddress.wlanIpv4()` — reads the WLAN IPv4 off
+  `ConnectivityManager.activeNetwork`'s `LinkProperties`, gated on
+  `NetworkCapabilities.TRANSPORT_WIFI`; returns `null` off WiFi (cellular,
+  no connection) rather than guessing.
+
+### Phase 2 — BluOsClient + BluOsDiscovery — 2026-09-22
+
+Second slice: talking to the Node. Independent of `MediaHttpServer` above;
+`NodeOutput` is what will wire the two together. **Not yet exercised against
+a real Node** — `BluOsXmlParserTest`'s fixtures are the exact response shapes
+recorded in `bluos-api.md` from Phase 0's `probe.py` sweep, but nothing has
+made a live request yet.
+
+- `BluOsClient` — a stateless Ktor (CIO engine) wrapper; every method takes
+  the target `BluOsPlayer` explicitly rather than binding to one player at
+  construction, since discovery can re-resolve a player's address at any
+  time and (eventually) more than one player can exist. `expectSuccess =
+  true` so a non-2xx surfaces as an exception rather than silently returning
+  a body no one checked.
+  - `status()` long-polls `/Status?timeout=&etag=`; the request's own socket
+    timeout is always `timeout=` + 15s, never just the BluOS `timeout=`
+    value itself — bluos-api.md is explicit that the socket timeout must
+    exceed it, and a poll parked at `timeout=100` needs a client willing to
+    actually wait that long.
+  - `playUrl()`/`seek()`/`pause()`/`stop()`/`resume()`/`setVolume()` cover
+    every *verified* command from the endpoint reference. `/Skip`/`/Back`
+    are deliberately not implemented — hard constraint #5, they're
+    meaningless once a custom `streamUrl` is playing.
+  - **Deliberately does not implement `/SyncStatus`** (volume, player
+    identity, grouping). `bluos-api.md` only confirms the long-poll
+    *mechanism* behaves like `/Status`; the actual field names (volume in
+    particular) were never captured against real hardware in Phase 0. Adding
+    it now would mean guessing a schema, which is exactly what this project
+    doesn't do — see the file's own opening line. Build it when `NodeOutput`
+    needs volume, verified against the Node first.
+- `BluOsXmlParser` — pure `javax.xml` (`DocumentBuilderFactory`/DOM), zero
+  Android imports specifically so it has real unit tests
+  (`BluOsXmlParserTest`, 5 cases including the collapsed `stop` document and
+  the Bluetooth-hijack case) without needing Robolectric. `android.util.Xml`
+  would have been the more idiomatic Android choice but isn't callable from
+  a plain JVM unit test.
+- `BluOsStatus` only exposes fields `bluos-api.md` actually verified. `state`
+  is a raw `String`, not an enum — the full set of values was never
+  enumerated (Phase 0 only ever saw `stream`/`stop`), so branching should
+  compare against known constants rather than exhaustively matching.
+  `totalSeconds`/`streamUrl`/`streamFormat` are all nullable because they
+  **disappear from the document entirely**, not just go empty, once `state`
+  collapses to `stop` — confirmed by `BluOsXmlParserTest`.
+- `BluOsDiscovery` — NSD (`_musc._tcp`) via `NsdManager`, emitting the
+  current resolved player set as a `Flow<List<BluOsPlayer>>`. A fresh
+  `NsdManager.ResolveListener` per `onServiceFound` call, not one shared
+  instance — `NsdManager` rejects reusing a listener across concurrent
+  in-flight `resolveService` calls, and several services can be found before
+  any of them finishes resolving. Holds a `WifiManager.MulticastLock` for
+  the duration of discovery (some devices otherwise silently drop mDNS
+  multicast packets — the target Samsung devices have a history of exactly
+  this class of bug elsewhere in the codebase, e.g. the Freecess background
+  freeze noted above, so this was treated as cheap insurance rather than
+  guessed-unnecessary).
+  - **`NEARBY_WIFI_DEVICES` (`neverForLocation`) is required on API 33+** —
+    without it `NsdManager.discoverServices()` throws. Nothing extra is
+    needed pre-33; unlike `WifiP2pManager`, plain NSD never required a
+    location permission on older Android versions. `hasNearbyWifiPermission()`
+    checks this before starting and returns an empty list rather than
+    crashing if it's missing — **the actual runtime permission *request* UI
+    doesn't exist yet**, deliberately deferred to whenever the output-switcher
+    screen is built, since that's the natural point a rationale/request flow
+    belongs (same reasoning as `AudioPermissionScreen` for library scanning).
+  - `resolveService`/`NsdServiceInfo.host` are deprecated in favor of API
+    34's `registerServiceInfoCallback`/`getHostAddresses()` — suppressed
+    deliberately, not fixed, since minSdk here is 26.
 
 ## Library scanning — folder exclusion (not in the original plan, now permanent)
 

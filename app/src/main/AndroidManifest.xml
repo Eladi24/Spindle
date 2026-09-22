@@ -14,6 +14,18 @@
          HapticFeedbackType route (View.performHapticFeedback) needs no
          permission but rendered SEGMENT_TICK too weak to feel on-device. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Phase 2: MediaHttpServer serves files to the BluOS Node over the LAN. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Phase 2: BluOsDiscovery (NSD/mDNS). Android 13+ gates NsdManager behind
+         this; pre-33 needs no location-adjacent permission for NSD at all, so
+         nothing else is added for older devices. -->
+    <uses-permission
+        android:name="android.permission.NEARBY_WIFI_DEVICES"
+        android:usesPermissionFlags="neverForLocation" />
+    <!-- Some devices silently drop mDNS multicast packets without this held
+         for the duration of discovery. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
 
     <application
         android:name=".App"
