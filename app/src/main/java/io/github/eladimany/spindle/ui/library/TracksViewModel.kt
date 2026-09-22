@@ -59,10 +59,11 @@ class TracksViewModel @Inject constructor(
         viewModelScope.launch {
             val all = libraryRepository.allTracksSorted(sort.value)
             if (all.isEmpty()) return@launch
-            playbackController.playTracks(all, 0)
-            playbackController.setShuffled(true)
+            playbackController.playTracksShuffled(all)
         }
     }
+
+    fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)
 
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)
 }

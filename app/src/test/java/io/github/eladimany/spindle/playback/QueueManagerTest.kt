@@ -50,10 +50,11 @@ class QueueManagerTest {
     }
 
     @Test
-    fun `next at the end with repeat off stays on the last track`() {
+    fun `next at the end with repeat off returns null and stays on the last track`() {
         repeat(4) { manager.next() }
         assertEquals("q5", manager.currentItem?.id)
-        assertEquals("q5", manager.next()?.id)
+        assertNull(manager.next())
+        assertEquals("q5", manager.currentItem?.id)
     }
 
     @Test
@@ -112,6 +113,14 @@ class QueueManagerTest {
         manager.setShuffled(false)
         assertEquals(fixture.map { it.id }, manager.queue.map { it.id })
         assertEquals("q2", manager.currentItem?.id)
+    }
+
+    @Test
+    fun `shuffle places the currently playing track first, not wherever it randomly lands`() {
+        manager.next() // q2
+        manager.setShuffled(true)
+        assertEquals(0, manager.currentIndex)
+        assertEquals("q2", manager.queue.first().id)
     }
 
     @Test

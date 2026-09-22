@@ -39,6 +39,7 @@ class PlaybackController @Inject constructor(
     private val queueManager = QueueManager()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var serviceStarted = false
+    private var nextQueueItemSeq = 0L
 
     val playbackState: StateFlow<PlaybackState> = output.state
 
@@ -81,6 +82,22 @@ class PlaybackController @Inject constructor(
         playQueue(tracks.map { QueueItem(id = "q${it.id}", track = it) }, startIndex)
     }
 
+    /** "Shuffle All": shuffles [tracks] before playing, so playback starts on track 1
+     * of a genuinely fresh shuffled order instead of the sorted list's first track. */
+    fun playTracksShuffled(tracks: List<Track>) {
+        queueManager.setQueueShuffled(tracks.map { QueueItem(id = "q${it.id}", track = it) })
+        refreshQueueState()
+        queueManager.currentItem?.let { playItem(it) }
+    }
+
+    /** Appends [tracks] to the end of the current queue without interrupting playback.
+     * Each slot gets a fresh id — [tracks] may already include the track(s) playing now. */
+    fun addToQueue(tracks: List<Track>) {
+        if (tracks.isEmpty()) return
+        queueManager.addAll(tracks.map { QueueItem(id = "q${it.id}-${nextQueueItemSeq++}", track = it) })
+        refreshQueueState()
+    }
+
     fun togglePlayPause() {
         when (playbackState.value) {
             is PlaybackState.Playing -> scope.launch { output.pause() }
@@ -90,7 +107,12 @@ class PlaybackController @Inject constructor(
     }
 
     fun next() {
-        queueManager.next()?.let { playItem(it) }
+        val hadItems = queueManager.size > 0
+        val next = queueManager.next()
+        when {
+            next != null -> playItem(next)
+            hadItems -> stopAndClear()
+        }
     }
 
     fun previous() {
@@ -131,12 +153,20 @@ class PlaybackController @Inject constructor(
 
     private fun advance() {
         val next = queueManager.onTrackEnded()
-        refreshQueueState()
         if (next != null) {
+            refreshQueueState()
             playItem(next)
         } else {
-            scope.launch { output.stop() }
+            stopAndClear()
         }
+    }
+
+    /** Queue exhausted with repeat off — stop output and clear, same for a natural
+     * end-of-track as for skipping forward past the last track. */
+    private fun stopAndClear() {
+        scope.launch { output.stop() }
+        queueManager.clear()
+        refreshQueueState()
     }
 
     private fun playItem(item: QueueItem) {

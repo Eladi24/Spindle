@@ -35,6 +35,17 @@ class QueueManager {
         position = if (items.isEmpty()) -1 else startIndex.coerceIn(0, items.size - 1)
     }
 
+    /** Like [setQueue], but the play order is shuffled up front and playback starts
+     * at the first slot of that shuffled order — for "Shuffle All", where there's no
+     * "currently playing track" yet to preserve, unlike [setShuffled]. */
+    fun setQueueShuffled(newItems: List<QueueItem>) {
+        items.clear()
+        items.addAll(newItems)
+        order = items.indices.toMutableList().apply { shuffle() }
+        isShuffled = true
+        position = if (items.isEmpty()) -1 else 0
+    }
+
     fun clear() {
         items.clear()
         order.clear()
@@ -47,21 +58,39 @@ class QueueManager {
         if (position == -1) position = 0
     }
 
+    /** Appends [newItems] to the end of the play order, keeping playback where it is. */
+    fun addAll(newItems: List<QueueItem>) {
+        if (newItems.isEmpty()) return
+        val start = items.size
+        items.addAll(newItems)
+        newItems.indices.forEach { order.add(start + it) }
+        if (position == -1) position = 0
+    }
+
     fun setRepeatMode(mode: RepeatMode) {
         repeatMode = mode
     }
 
+    /**
+     * Turning shuffle on keeps the currently playing track in place as track 1 of the
+     * new order — only the *rest* get shuffled behind it — rather than shuffling
+     * everything including the current track and leaving it wherever it lands. Turning
+     * shuffle off restores the original order and finds where the current track sits in it.
+     */
     fun setShuffled(enabled: Boolean) {
         if (enabled == isShuffled) return
-        val currentId = currentItem?.id
-        order = if (enabled) {
-            items.indices.toMutableList().apply { shuffle() }
-        } else {
-            items.indices.toMutableList()
-        }
         isShuffled = enabled
-        position = currentId?.let { id -> order.indexOfFirst { items[it].id == id } } ?: -1
-        if (position == -1 && order.isNotEmpty()) position = 0
+        if (enabled) {
+            val currentIndex = order.getOrNull(position)
+            val rest = items.indices.filter { it != currentIndex }.toMutableList().apply { shuffle() }
+            order = if (currentIndex != null) (listOf(currentIndex) + rest).toMutableList() else rest
+            position = if (order.isEmpty()) -1 else 0
+        } else {
+            val currentId = currentItem?.id
+            order = items.indices.toMutableList()
+            position = currentId?.let { id -> order.indexOfFirst { items[it].id == id } } ?: -1
+            if (position == -1 && order.isNotEmpty()) position = 0
+        }
     }
 
     fun jumpTo(queueItemId: String): QueueItem? {
@@ -71,14 +100,19 @@ class QueueManager {
         return currentItem
     }
 
-    /** User-initiated skip. Ignores [RepeatMode.ONE] — that only affects [onTrackEnded]. */
+    /**
+     * User-initiated skip. Ignores [RepeatMode.ONE] — that only affects [onTrackEnded].
+     * Returns null when already on the last track and repeat isn't ALL — the caller
+     * should stop and clear, same as [onTrackEnded] running out — not replay the
+     * current track, which is what returning [currentItem] here used to do.
+     */
     fun next(): QueueItem? {
         if (order.isEmpty()) return null
         val nextPos = position + 1
         return when {
             nextPos < order.size -> { position = nextPos; currentItem }
             repeatMode == RepeatMode.ALL -> { position = 0; currentItem }
-            else -> currentItem
+            else -> null
         }
     }
 
