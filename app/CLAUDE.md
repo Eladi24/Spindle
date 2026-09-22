@@ -204,3 +204,15 @@ NAT and the Node cannot reach a server running inside it.
 Work phase by phase; `docs/PHASE1.md` is the current task list. Finish and verify
 one task before starting the next. Ask before adding a dependency that is not in
 the stack list above.
+
+## Deferred discussion — once local playback is robust and the user is satisfied
+
+Raised 2026-09-22, deliberately not acted on yet:
+
+- **Revisit the shuffle feature.** Current behavior: "Shuffle All" (Tracks tab)
+  and the shuffle toggle (Now Playing) both call `QueueManager.setShuffled`,
+  which Fisher-Yates permutes an index list once and keeps that order until
+  toggled off. The user wants to discuss this further once the player feels
+  solid — don't assume the current behavior is final.
+- **AI-generated playlists** — a possible future feature. Not scoped at all;
+  raise it with the user before doing any design or implementation work on it.

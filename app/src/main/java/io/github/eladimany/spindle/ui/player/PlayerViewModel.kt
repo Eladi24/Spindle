@@ -23,6 +23,7 @@ class PlayerViewModel @Inject constructor(
 
     val playbackState: StateFlow<PlaybackState> = controller.playbackState
     val queueState: StateFlow<QueueState> = controller.queueState
+    val volume: StateFlow<Int> = controller.volume
 
     fun togglePlayPause() = controller.togglePlayPause()
     fun next() = controller.next()
@@ -32,6 +33,7 @@ class PlayerViewModel @Inject constructor(
     fun removeFromQueue(queueItemId: String) = controller.remove(queueItemId)
     fun moveInQueue(from: Int, to: Int) = controller.move(from, to)
     fun setShuffled(enabled: Boolean) = controller.setShuffled(enabled)
+    fun setVolume(percent: Int) = controller.setVolume(percent)
 
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)
 

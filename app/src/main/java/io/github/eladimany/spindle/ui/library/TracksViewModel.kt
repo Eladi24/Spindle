@@ -53,5 +53,15 @@ class TracksViewModel @Inject constructor(
         }
     }
 
+    /** Plays the whole library shuffled, starting immediately. */
+    fun shuffleAll() {
+        viewModelScope.launch {
+            val all = libraryRepository.allTracksSorted(sort.value)
+            if (all.isEmpty()) return@launch
+            playbackController.playTracks(all, 0)
+            playbackController.setShuffled(true)
+        }
+    }
+
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)
 }

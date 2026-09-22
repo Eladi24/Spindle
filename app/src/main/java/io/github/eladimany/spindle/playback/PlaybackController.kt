@@ -42,6 +42,11 @@ class PlaybackController @Inject constructor(
     private val _queueState = MutableStateFlow(QueueState())
     val queueState: StateFlow<QueueState> = _queueState.asStateFlow()
 
+    // AudioOutput has no volume getter — Node output (Phase 2) can't be polled for
+    // it either, so this app-side value is the source of truth for what we last set.
+    private val _volume = MutableStateFlow(100)
+    val volume: StateFlow<Int> = _volume.asStateFlow()
+
     init {
         scope.launch {
             output.state.collect { state ->
@@ -106,7 +111,9 @@ class PlaybackController @Inject constructor(
     }
 
     fun setVolume(percent: Int) {
-        scope.launch { output.setVolume(percent) }
+        val clamped = percent.coerceIn(0, 100)
+        _volume.value = clamped
+        scope.launch { output.setVolume(clamped) }
     }
 
     private fun advance() {

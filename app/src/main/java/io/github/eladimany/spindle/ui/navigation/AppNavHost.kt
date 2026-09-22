@@ -35,15 +35,16 @@ import io.github.eladimany.spindle.ui.library.FolderDetailScreen
 import io.github.eladimany.spindle.ui.library.TracksScreen
 import io.github.eladimany.spindle.ui.player.NowPlayingScreen
 import io.github.eladimany.spindle.ui.player.PlayerViewModel
+import io.github.eladimany.spindle.ui.player.QueueScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistDetailScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistsScreen
 
 private data class BottomTab(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
 private val bottomTabs = listOf(
-    BottomTab(Routes.TRACKS, "Tracks", Icons.Default.MusicNote),
     BottomTab(Routes.ARTISTS, "Artists", Icons.Default.Person),
     BottomTab(Routes.ALBUMS, "Albums", Icons.Default.Album),
+    BottomTab(Routes.TRACKS, "Tracks", Icons.Default.MusicNote),
     BottomTab(Routes.FOLDERS, "Folders", Icons.Default.Folder),
     BottomTab(Routes.PLAYLISTS, "Playlists", Icons.AutoMirrored.Filled.QueueMusic),
 )
@@ -93,7 +94,7 @@ fun AppNavHost() {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = Routes.TRACKS,
+            startDestination = Routes.ARTISTS,
             modifier = Modifier.padding(innerPadding),
         ) {
             composable(Routes.TRACKS) { TracksScreen() }
@@ -143,7 +144,16 @@ fun AppNavHost() {
 
             composable(Routes.MANAGE_FOLDERS) { FoldersScreen() }
 
-            composable(Routes.NOW_PLAYING) { NowPlayingScreen(viewModel = playerViewModel) }
+            composable(Routes.NOW_PLAYING) {
+                NowPlayingScreen(
+                    viewModel = playerViewModel,
+                    onOpenQueue = { navController.navigate(Routes.QUEUE) },
+                )
+            }
+
+            composable(Routes.QUEUE) {
+                QueueScreen(onBack = { navController.popBackStack() }, viewModel = playerViewModel)
+            }
         }
     }
 }

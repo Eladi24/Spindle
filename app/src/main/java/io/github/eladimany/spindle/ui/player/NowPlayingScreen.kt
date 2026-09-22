@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -14,6 +15,8 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -23,6 +26,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -39,11 +43,13 @@ import kotlinx.coroutines.delay
 
 @Composable
 fun NowPlayingScreen(
+    onOpenQueue: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PlayerViewModel = hiltViewModel(),
 ) {
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val queueState by viewModel.queueState.collectAsStateWithLifecycle()
+    val volume by viewModel.volume.collectAsStateWithLifecycle()
 
     val item = when (val s = playbackState) {
         is PlaybackState.Playing -> s.item
@@ -84,6 +90,12 @@ fun NowPlayingScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = onOpenQueue) {
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Queue")
+            }
+        }
+
         TrackArtwork(
             track = item.track,
             fetchArtworkUri = viewModel::artworkUriFor,
@@ -151,6 +163,38 @@ fun NowPlayingScreen(
                 Icon(icon, contentDescription = "Repeat", tint = tint)
             }
         }
+
+        VolumeRow(volume = volume, onVolumeChange = viewModel::setVolume)
+    }
+}
+
+@Composable
+private fun VolumeRow(volume: Int, onVolumeChange: (Int) -> Unit) {
+    var lastNonZeroVolume by remember { mutableIntStateOf(if (volume > 0) volume else 100) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = {
+            if (volume > 0) {
+                lastNonZeroVolume = volume
+                onVolumeChange(0)
+            } else {
+                onVolumeChange(lastNonZeroVolume)
+            }
+        }) {
+            Icon(
+                if (volume == 0) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                contentDescription = if (volume == 0) "Unmute" else "Mute",
+            )
+        }
+        Slider(
+            value = volume.toFloat(),
+            valueRange = 0f..100f,
+            onValueChange = { onVolumeChange(it.toInt()) },
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 

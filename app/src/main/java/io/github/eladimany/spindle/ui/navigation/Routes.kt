@@ -8,6 +8,7 @@ object Routes {
     const val PLAYLISTS = "playlists"
     const val MANAGE_FOLDERS = "manage_folders"
     const val NOW_PLAYING = "now_playing"
+    const val QUEUE = "queue"
 
     const val ARTIST_DETAIL_PATTERN = "artist/{artistId}"
     fun artistDetail(id: Long) = "artist/$id"
