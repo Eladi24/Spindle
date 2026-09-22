@@ -7,9 +7,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
@@ -32,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.eladimany.spindle.core.model.Playlist
 
 @Composable
 fun PlaylistsScreen(
@@ -42,6 +45,7 @@ fun PlaylistsScreen(
 ) {
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     var showCreateDialog by remember { mutableStateOf(false) }
+    var renameTarget by remember { mutableStateOf<Playlist?>(null) }
 
     Scaffold(
         modifier = modifier,
@@ -77,7 +81,17 @@ fun PlaylistsScreen(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(playlist.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(playlist.name, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "${playlist.trackCount} tracks",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(onClick = { renameTarget = playlist }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Rename playlist")
+                        }
                         IconButton(onClick = { viewModel.delete(playlist) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete playlist")
                         }
@@ -104,6 +118,26 @@ fun PlaylistsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    renameTarget?.let { target ->
+        var name by remember(target.id) { mutableStateOf(target.name) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            title = { Text("Rename playlist") },
+            text = {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name") })
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.rename(target, name)
+                    renameTarget = null
+                }) { Text("Rename") }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text("Cancel") }
             },
         )
     }

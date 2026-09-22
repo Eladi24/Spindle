@@ -24,7 +24,26 @@ class PlaylistsViewModel @Inject constructor(
         viewModelScope.launch { repository.create(name.trim()) }
     }
 
+    fun rename(playlist: Playlist, name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch { repository.rename(playlist.id, name.trim()) }
+    }
+
     fun delete(playlist: Playlist) {
         viewModelScope.launch { repository.delete(playlist.id) }
+    }
+
+    /** Creates a playlist and immediately adds [trackIds] to it — the "New playlist" path
+     * from the add-to-playlist sheet, where there's no existing playlist to add to yet. */
+    fun createAndAddTracks(name: String, trackIds: List<Long>) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            val id = repository.create(name.trim())
+            repository.addTracks(id, trackIds)
+        }
+    }
+
+    fun addTracks(playlistId: Long, trackIds: List<Long>) {
+        viewModelScope.launch { repository.addTracks(playlistId, trackIds) }
     }
 }

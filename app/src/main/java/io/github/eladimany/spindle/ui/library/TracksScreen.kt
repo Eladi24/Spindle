@@ -34,7 +34,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.core.model.TrackSort
+import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 
 @Composable
@@ -47,6 +49,7 @@ fun TracksScreen(
     val sort by viewModel.sort.collectAsStateWithLifecycle()
     val currentTrackId by viewModel.currentTrackId.collectAsStateWithLifecycle()
     var showSortMenu by remember { mutableStateOf(false) }
+    var actionsTarget by remember { mutableStateOf<List<Track>?>(null) }
 
     Scaffold(
         modifier = modifier,
@@ -97,6 +100,7 @@ fun TracksScreen(
                         track = track,
                         isCurrent = track.id == currentTrackId,
                         onClick = { viewModel.playTrack(track) },
+                        onLongClick = { actionsTarget = listOf(track) },
                         fetchArtworkUri = viewModel::artworkUriFor,
                     )
                 } else {
@@ -105,6 +109,14 @@ fun TracksScreen(
                 HorizontalDivider()
             }
         }
+    }
+
+    actionsTarget?.let { target ->
+        TrackActionsSheet(
+            tracks = target,
+            onAddToQueue = viewModel::addToQueue,
+            onDismiss = { actionsTarget = null },
+        )
     }
 }
 

@@ -1,6 +1,7 @@
 package io.github.eladimany.spindle.ui.components
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import io.github.eladimany.spindle.core.model.Track
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun TrackRow(
     track: Track,
@@ -24,6 +26,10 @@ fun TrackRow(
     onClick: () -> Unit,
     fetchArtworkUri: suspend (Track) -> String?,
     modifier: Modifier = Modifier,
+    // Long-press is the standard mobile affordance for a secondary "act on this row"
+    // action — used for "add to playlist" wherever TrackRow appears, but TrackRow
+    // itself stays decoupled from what that action actually does.
+    onLongClick: () -> Unit = {},
 ) {
     Surface(
         modifier = modifier
@@ -38,7 +44,7 @@ fun TrackRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClick = onClick)
+                .combinedClickable(onClick = onClick, onLongClick = onLongClick)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

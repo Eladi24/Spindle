@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Artist
+import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.library.LibraryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +30,9 @@ class ArtistDetailViewModel @Inject constructor(
     val artist: StateFlow<Artist?> = _artist.asStateFlow()
 
     val albums: StateFlow<List<Album>> = libraryRepository.albumsForArtist(artistId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val tracks: StateFlow<List<Track>> = libraryRepository.tracksForArtist(artistId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     init {

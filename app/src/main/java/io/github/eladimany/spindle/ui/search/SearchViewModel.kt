@@ -69,6 +69,8 @@ class SearchViewModel @Inject constructor(
         playbackController.playTracks(all, startIndex)
     }
 
+    fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)
+
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)
     suspend fun artworkUriForAlbum(album: Album): String? = artworkRepository.artworkUriForAlbum(album)
 }

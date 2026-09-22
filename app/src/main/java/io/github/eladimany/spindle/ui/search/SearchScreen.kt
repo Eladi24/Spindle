@@ -26,6 +26,9 @@ import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,7 +37,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Artist
+import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.ui.components.AlbumArtwork
+import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 
 @Composable
@@ -48,6 +53,7 @@ fun SearchScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
     val currentTrackId by viewModel.currentTrackId.collectAsStateWithLifecycle()
+    var actionsTarget by remember { mutableStateOf<List<Track>?>(null) }
 
     Scaffold(
         modifier = modifier,
@@ -127,12 +133,21 @@ fun SearchScreen(
                             track = track,
                             isCurrent = track.id == currentTrackId,
                             onClick = { viewModel.playTrack(track) },
+                            onLongClick = { actionsTarget = listOf(track) },
                             fetchArtworkUri = viewModel::artworkUriFor,
                         )
                     }
                 }
             }
         }
+    }
+
+    actionsTarget?.let { target ->
+        TrackActionsSheet(
+            tracks = target,
+            onAddToQueue = viewModel::addToQueue,
+            onDismiss = { actionsTarget = null },
+        )
     }
 }
 

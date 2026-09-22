@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.Playlist
+import io.github.eladimany.spindle.core.model.PlaylistEntry
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.playlists.PlaylistRepository
@@ -30,20 +31,47 @@ class PlaylistDetailViewModel @Inject constructor(
     private val _playlist = MutableStateFlow<Playlist?>(null)
     val playlist: StateFlow<Playlist?> = _playlist.asStateFlow()
 
-    val tracks: StateFlow<List<Track>> = repository.tracksFor(playlistId)
+    val entries: StateFlow<List<PlaylistEntry>> = repository.entriesFor(playlistId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
 
     init {
+        refreshPlaylist()
+    }
+
+    private fun refreshPlaylist() {
         viewModelScope.launch { _playlist.value = repository.getById(playlistId) }
     }
 
     fun playTrack(track: Track) {
-        val all = tracks.value
+        val all = entries.value.map { it.track }
         val startIndex = all.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
         playbackController.playTracks(all, startIndex)
     }
+
+    fun playAll() {
+        val all = entries.value.map { it.track }
+        if (all.isNotEmpty()) playbackController.playTracks(all)
+    }
+
+    fun rename(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            repository.rename(playlistId, name.trim())
+            refreshPlaylist()
+        }
+    }
+
+    fun removeEntry(crossRefId: Long) {
+        viewModelScope.launch { repository.removeEntry(playlistId, crossRefId) }
+    }
+
+    fun reorder(orderedEntries: List<PlaylistEntry>) {
+        viewModelScope.launch { repository.reorder(playlistId, orderedEntries) }
+    }
+
+    fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)
 
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)
 }

@@ -2,6 +2,7 @@ package io.github.eladimany.spindle.data.db.dao
 
 import androidx.room.Dao
 import androidx.room.Delete
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
@@ -10,10 +11,34 @@ import io.github.eladimany.spindle.data.db.entity.PlaylistTrackCrossRef
 import io.github.eladimany.spindle.data.db.entity.TrackEntity
 import kotlinx.coroutines.flow.Flow
 
+/** A playlist row plus its live track count, for list screens that show "N tracks". */
+data class PlaylistWithCount(
+    val id: Long,
+    val name: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val trackCount: Int,
+)
+
+/** One playlist membership row joined to its track — carries [crossRefId] so remove/reorder
+ * can target the membership itself rather than guessing from track id (which could repeat). */
+data class PlaylistTrackEntryRow(
+    val crossRefId: Long,
+    val position: Int,
+    @Embedded val track: TrackEntity,
+)
+
 @Dao
 interface PlaylistDao {
     @Query("SELECT * FROM playlists ORDER BY nameSortKey")
     fun observeAll(): Flow<List<PlaylistEntity>>
+
+    @Query(
+        "SELECT p.id, p.name, p.createdAt, p.updatedAt, COUNT(x.id) AS trackCount " +
+            "FROM playlists p LEFT JOIN playlist_track_cross_ref x ON x.playlistId = p.id " +
+            "GROUP BY p.id ORDER BY p.nameSortKey",
+    )
+    fun observeAllWithCounts(): Flow<List<PlaylistWithCount>>
 
     @Query("SELECT * FROM playlists WHERE id = :id")
     suspend fun getById(id: Long): PlaylistEntity?
@@ -37,6 +62,13 @@ interface PlaylistDao {
     )
     fun observeTracks(playlistId: Long): Flow<List<TrackEntity>>
 
+    @Query(
+        "SELECT x.id AS crossRefId, x.position AS position, t.* FROM tracks t " +
+            "INNER JOIN playlist_track_cross_ref x ON x.trackId = t.id " +
+            "WHERE x.playlistId = :playlistId ORDER BY x.position",
+    )
+    fun observeEntries(playlistId: Long): Flow<List<PlaylistTrackEntryRow>>
+
     @Query("SELECT COUNT(*) FROM playlist_track_cross_ref WHERE playlistId = :playlistId")
     suspend fun trackCount(playlistId: Long): Int
 
@@ -45,6 +77,9 @@ interface PlaylistDao {
 
     @Insert
     suspend fun addTrack(crossRef: PlaylistTrackCrossRef)
+
+    @Insert
+    suspend fun addTracks(crossRefs: List<PlaylistTrackCrossRef>)
 
     @Query("DELETE FROM playlist_track_cross_ref WHERE id = :crossRefId")
     suspend fun removeTrack(crossRefId: Long)

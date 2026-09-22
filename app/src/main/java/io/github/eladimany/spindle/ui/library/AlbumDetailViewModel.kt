@@ -51,6 +51,8 @@ class AlbumDetailViewModel @Inject constructor(
         playbackController.playTracks(tracks.value)
     }
 
+    fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)
+
     suspend fun artworkUriForAlbum(album: Album): String? = artworkRepository.artworkUriForAlbum(album)
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)
 }
