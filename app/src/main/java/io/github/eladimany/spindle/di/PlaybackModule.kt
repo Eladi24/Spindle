@@ -11,7 +11,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.github.eladimany.spindle.playback.AudioOutput
-import io.github.eladimany.spindle.playback.LocalOutput
+import io.github.eladimany.spindle.playback.AudioOutputSwitcher
 import javax.inject.Singleton
 
 @Module
@@ -36,5 +36,5 @@ object PlaybackModule {
 @InstallIn(SingletonComponent::class)
 abstract class PlaybackBindingsModule {
     @Binds
-    abstract fun bindAudioOutput(impl: LocalOutput): AudioOutput
+    abstract fun bindAudioOutput(impl: AudioOutputSwitcher): AudioOutput
 }

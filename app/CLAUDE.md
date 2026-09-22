@@ -570,7 +570,8 @@ io/github/eladimany/spindle/
 │                            BluOsDiscovery, NodeTrackEnd, IcyName
 │                            (Phase 2, see below)
 ├── playback/                AudioOutput, MediaSource, LocalOutput, NodeOutput,
-│                            QueueManager, PlaybackController, PlaybackService
+│                            AudioOutputSwitcher, QueueManager,
+│                            PlaybackController, PlaybackService
 └── ui/
     ├── navigation/          Routes, AppNavHost (bottom bar + NavHost)
     ├── components/          TrackArtwork/AlbumArtwork, TrackRow, MiniPlayerBar
@@ -585,12 +586,10 @@ io/github/eladimany/spindle/
     └── playlists/           PlaylistsScreen/VM, PlaylistDetailScreen/VM
 ```
 
-`MediaHttpServer`/`TokenRegistry`/`BluOsClient`/`BluOsDiscovery`/`NodeOutput`
-are all built — see below. **`NodeOutput` is not wired into
-`PlaybackController`/DI yet** — `PlaybackModule` still `@Binds`
-`AudioOutput` to `LocalOutput` unconditionally, and switching outputs at
-runtime needs an output-switcher mechanism that doesn't exist yet (the
-output-switcher UI task).
+`MediaHttpServer`/`TokenRegistry`/`BluOsClient`/`BluOsDiscovery`/`NodeOutput`/
+`AudioOutputSwitcher` are all built and wired — see below. **Only the picker
+UI itself is left** — nothing in the app can trigger `switchTo()` yet, so in
+practice the app still always plays through `LocalOutput`.
 
 ### Phase 2 — MediaHttpServer + TokenRegistry — 2026-09-22
 
@@ -755,6 +754,41 @@ Node** — see the package-layout note above for why.
   implement `/SyncStatus`. `setVolume()` fires `/Volume?level=` and updates
   the local `StateFlow` optimistically; it reflects what we last asked for,
   not what the Node actually reports.
+
+### Phase 2 — AudioOutputSwitcher — 2026-09-22
+
+The piece that actually makes switching real: `PlaybackBindingsModule` now
+binds `AudioOutput` to `AudioOutputSwitcher`, not `LocalOutput` directly.
+`PlaybackController` is unchanged — it still just holds "an `AudioOutput`"
+and has no idea `NodeOutput`/`LocalOutput`/switching exist at all, exactly
+per the architecture note above. **Nothing calls `switchTo()` yet** — that's
+the picker UI, the one remaining Phase 2 piece, deliberately not started
+without a mockup pass first (see the Deferred/UI-process notes elsewhere in
+this file).
+
+- `state`/`volume` are built with `_target.flatMapLatest { outputFor(it).state }`
+  `.stateIn(scope, SharingStarted.Eagerly, ...)` rather than a manually
+  updated `MutableStateFlow` — switching `_target` automatically resubscribes
+  to the new output's own flow and cancels the old subscription, so there's
+  no code path that could forward a stale value from the output just
+  switched away from. `capabilities` doesn't need this: the interface
+  exposes it as a plain `val`, so `get() = active.capabilities` reads live
+  on every access with no flow needed.
+- `switchTo(target)` carries over what's currently loaded: reads its own
+  `state.value` for the item + position *before* touching anything, stops
+  the old output, connects the new one if it's a Node, then `play()`s (and
+  `seek()`s back close to the same position) on the new output. This is a
+  **fresh load on the new output, not a seamless handoff** — neither output
+  can hand the other a mid-decode stream — so switching mid-track will
+  always have a brief gap/rebuffer. Documented as a known limitation rather
+  than something to fix now.
+- Switching Node → Local calls `nodeOutput.disconnect()` explicitly (tears
+  down `MediaHttpServer` and the status long-poll). Switching Node A → Node
+  B deliberately does **not** call `disconnect()` from this class —
+  `NodeOutput.connect()` already disconnects any previous session as its
+  first step, so an extra call here would race and tear down the *new*
+  connection instead of the old one. Local → Node needs no explicit
+  disconnect at all (nothing was connected).
 
 ## Library scanning — folder exclusion (not in the original plan, now permanent)
 
