@@ -27,6 +27,15 @@ object BluOsXmlParser {
         )
     }
 
+    fun parseSyncStatus(xml: String): BluOsSyncStatus {
+        val root = parseRoot(xml)
+        return BluOsSyncStatus(
+            etag = root.getAttribute("etag").ifBlank { null },
+            volume = root.getAttribute("volume").toIntOrNull(),
+            name = root.getAttribute("name").ifBlank { null },
+        )
+    }
+
     private fun parseRoot(xml: String): Element {
         val factory = DocumentBuilderFactory.newInstance()
         val builder = factory.newDocumentBuilder()

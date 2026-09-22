@@ -57,20 +57,22 @@ class NodeOutput @Inject constructor(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var statusJob: Job? = null
+    private var syncStatusJob: Job? = null
 
     private var player: BluOsPlayer? = null
     private var serverAddress: ServerAddress? = null
     private var currentItem: QueueItem? = null
     private var lastEtag: String? = null
+    private var lastSyncEtag: String? = null
     private var lastKnownSecs: Int = 0
     private var lastKnownTotalSeconds: Int? = null
 
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     override val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
-    // No ground truth for this yet — see BluOsClient's note on why
-    // /SyncStatus isn't implemented. Reflects only what we've last told the
-    // Node to set, not its actual current volume.
+    // Kept in sync by syncStatusLoop (long-polled /SyncStatus) — setVolume()
+    // also writes it optimistically for instant UI feedback, but the next
+    // poll response is the actual source of truth.
     private val _volume = MutableStateFlow(100)
     override val volume: StateFlow<Int> = _volume.asStateFlow()
 
@@ -94,17 +96,24 @@ class NodeOutput @Inject constructor(
             ?: error("Not on WiFi — can't serve files to a BluOS Node")
         player = target
         serverAddress = mediaHttpServer.start(host)
+        // Volume matters even before anything's playing (unlike the /Status
+        // loop, which only makes sense once play() has loaded something),
+        // so this starts right away rather than lazily.
+        ensureSyncStatusLoop()
     }
 
     fun disconnect() {
         statusJob?.cancel()
         statusJob = null
+        syncStatusJob?.cancel()
+        syncStatusJob = null
         mediaHttpServer.stop()
         tokenRegistry.clear()
         player = null
         serverAddress = null
         currentItem = null
         lastEtag = null
+        lastSyncEtag = null
         lastKnownSecs = 0
         lastKnownTotalSeconds = null
         _state.value = PlaybackState.Idle
@@ -167,6 +176,26 @@ class NodeOutput @Inject constructor(
             }
             lastEtag = status.etag
             applyStatus(status)
+        }
+    }
+
+    private fun ensureSyncStatusLoop() {
+        if (syncStatusJob?.isActive == true) return
+        syncStatusJob = scope.launch { syncStatusLoop() }
+    }
+
+    private suspend fun syncStatusLoop() {
+        while (true) {
+            val target = player ?: return
+            val sync = try {
+                bluOsClient.syncStatus(target, timeoutSeconds = LONG_POLL_TIMEOUT_SECONDS, etag = lastSyncEtag)
+            } catch (e: Exception) {
+                Timber.w(e, "BluOS sync-status long-poll failed")
+                delay(RETRY_DELAY_MS)
+                continue
+            }
+            lastSyncEtag = sync.etag
+            sync.volume?.let { _volume.value = it }
         }
     }
 

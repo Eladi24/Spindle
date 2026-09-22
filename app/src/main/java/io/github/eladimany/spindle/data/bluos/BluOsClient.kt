@@ -21,12 +21,8 @@ private const val COMMAND_TIMEOUT_MS = 10_000L
  * explicitly rather than binding to one player at construction, since
  * discovery can re-resolve a player's address at any time.
  *
- * Deliberately does not implement `/SyncStatus` (volume, player identity):
- * `docs/bluos-api.md` only confirms its long-poll *mechanism* behaves like
- * `/Status`, not its actual field names — implementing that now would mean
- * guessing a schema this project's own rule is not to guess. Add it once
- * `NodeOutput` needs volume and it can be verified against the real Node
- * first, same as everything else in this file.
+ * `syncStatus()` (volume, player identity) was added once verified against a
+ * real Node — see [BluOsSyncStatus]'s doc comment for the exact XML shape.
  */
 @Singleton
 class BluOsClient @Inject constructor() {
@@ -48,6 +44,16 @@ class BluOsClient @Inject constructor() {
             timeout { requestTimeoutMillis = ((timeoutSeconds ?: 0) + 15) * 1000L }
         }
         return BluOsXmlParser.parseStatus(response.bodyAsText())
+    }
+
+    /** Long-polls `/SyncStatus` — same shape/rules as [status], but for volume and player identity. */
+    suspend fun syncStatus(player: BluOsPlayer, timeoutSeconds: Int? = null, etag: String? = null): BluOsSyncStatus {
+        val response = httpClient.get(baseUrl(player) + "/SyncStatus") {
+            timeoutSeconds?.let { parameter("timeout", it) }
+            etag?.let { parameter("etag", it) }
+            timeout { requestTimeoutMillis = ((timeoutSeconds ?: 0) + 15) * 1000L }
+        }
+        return BluOsXmlParser.parseSyncStatus(response.bodyAsText())
     }
 
     /** Resumes from pause. Does **not** work from a `stop` state (bluos-api.md). */

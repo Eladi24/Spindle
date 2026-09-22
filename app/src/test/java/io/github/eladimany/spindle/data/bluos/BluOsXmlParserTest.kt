@@ -90,4 +90,29 @@ class BluOsXmlParserTest {
 
         assertEquals("stop", BluOsXmlParser.parseStatus(xml).state)
     }
+
+    // Captured verbatim from a real Node (NODE model, firmware 4.16.22) on
+    // 2026-09-22 — see BluOsSyncStatus's own doc comment.
+    @Test
+    fun `parses a real SyncStatus response`() {
+        val xml = """
+            <SyncStatus etag="66" syncStat="66" version="4.16.22" id="10.0.0.9:11000" db="0" volume="100" name="Living Room HI-Fi"
+            model="N132" modelName="NODE" class="streamer" icon="/images/players/N125_nt.png" brand="Bluesound" schemaVersion="34"
+            initialized="true" mac="90:56:82:98:B4:42">
+             <pairWithSub/> <bluetoothOutput/> </SyncStatus>
+        """.trimIndent()
+
+        val sync = BluOsXmlParser.parseSyncStatus(xml)
+
+        assertEquals("66", sync.etag)
+        assertEquals(100, sync.volume)
+        assertEquals("Living Room HI-Fi", sync.name)
+    }
+
+    @Test
+    fun `SyncStatus missing volume attribute yields null rather than 0`() {
+        val xml = """<SyncStatus etag="1" name="Living Room"></SyncStatus>"""
+
+        assertNull(BluOsXmlParser.parseSyncStatus(xml).volume)
+    }
 }
