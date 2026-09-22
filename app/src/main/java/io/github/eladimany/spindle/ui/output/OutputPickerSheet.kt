@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,8 +18,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Smartphone
+import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -26,6 +30,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +47,8 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.BluOsPlayer
+import io.github.eladimany.spindle.playback.LocalRoute
+import io.github.eladimany.spindle.playback.LocalRouteKind
 import io.github.eladimany.spindle.playback.OutputTarget
 
 fun OutputTarget.displayName(): String = when (this) {
@@ -55,19 +62,25 @@ fun OutputPickerSheet(
     modifier: Modifier = Modifier,
     viewModel: OutputPickerViewModel = hiltViewModel(),
 ) {
-    var hasPermission by remember { mutableStateOf(viewModel.hasNearbyWifiPermission()) }
+    var hasNearbyWifiPermission by remember { mutableStateOf(viewModel.hasNearbyWifiPermission()) }
+    var hasBluetoothConnectPermission by remember { mutableStateOf(viewModel.hasBluetoothConnectPermission()) }
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) { granted -> hasPermission = granted }
+        ActivityResultContracts.RequestMultiplePermissions(),
+    ) { granted ->
+        granted[Manifest.permission.NEARBY_WIFI_DEVICES]?.let { hasNearbyWifiPermission = it }
+        granted[Manifest.permission.BLUETOOTH_CONNECT]?.let { hasBluetoothConnectPermission = it }
+    }
 
-    DisposableEffect(hasPermission) {
-        if (hasPermission) viewModel.startDiscovery()
+    DisposableEffect(hasNearbyWifiPermission) {
+        if (hasNearbyWifiPermission) viewModel.startDiscovery()
         onDispose { viewModel.stopDiscovery() }
     }
 
     val target by viewModel.target.collectAsStateWithLifecycle()
     val players by viewModel.players.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
+    val localRoutes by viewModel.localRoutes.collectAsStateWithLifecycle()
+    val preferredRouteId by viewModel.preferredRouteId.collectAsStateWithLifecycle()
 
     var showManualEntry by remember { mutableStateOf(false) }
     var manualHost by remember { mutableStateOf("") }
@@ -87,13 +100,62 @@ fun OutputPickerSheet(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            val speakerRoute = localRoutes.firstOrNull { it.kind == LocalRouteKind.SPEAKER }
+            val otherRoutes = localRoutes.filter { it.kind != LocalRouteKind.SPEAKER }
+
             OutputCard(
                 icon = Icons.Default.Smartphone,
                 title = "This phone",
-                subtitle = "Speaker & headphones",
-                isActive = target == OutputTarget.Local,
+                subtitle = "Built-in speaker",
+                // Also active before anything's ever been explicitly picked
+                // (preferredRouteId still null) — selectLocal() itself always
+                // pins the speaker from here on, so this only matters pre-pin.
+                isActive = target == OutputTarget.Local &&
+                    (preferredRouteId == null || preferredRouteId == speakerRoute?.id),
                 onClick = { viewModel.selectLocal() },
             )
+
+            // Only worth showing when there's an actual choice beyond the
+            // speaker "This phone" already covers — a connected Bluetooth or
+            // wired device.
+            if (otherRoutes.isNotEmpty()) {
+                Text(
+                    "OUTPUT DEVICE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    letterSpacing = 0.8.sp,
+                )
+                otherRoutes.forEach { route ->
+                    OutputCard(
+                        icon = when (route.kind) {
+                            LocalRouteKind.SPEAKER -> Icons.Default.Speaker
+                            LocalRouteKind.BLUETOOTH -> Icons.Default.Bluetooth
+                            LocalRouteKind.WIRED -> Icons.Default.Headphones
+                        },
+                        title = viewModel.routeDisplayName(route),
+                        subtitle = when (route.kind) {
+                            LocalRouteKind.SPEAKER -> "Built-in"
+                            LocalRouteKind.BLUETOOTH -> "Bluetooth"
+                            LocalRouteKind.WIRED -> "Wired"
+                        },
+                        isActive = target == OutputTarget.Local && preferredRouteId == route.id,
+                        onClick = { viewModel.selectLocalRoute(route) },
+                    )
+                }
+                // Decoupled from the network permission card below — a device
+                // can easily have granted that one already (e.g. an earlier
+                // test session) without ever having been asked for this one,
+                // since they're only ever requested together, gated on
+                // whichever one happens to still be missing.
+                if (!hasBluetoothConnectPermission && otherRoutes.any { it.kind == LocalRouteKind.BLUETOOTH }) {
+                    TextButton(
+                        onClick = { permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)) },
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text("Show the Bluetooth device's real name")
+                    }
+                }
+            }
 
             Text(
                 "ON YOUR NETWORK",
@@ -102,9 +164,15 @@ fun OutputPickerSheet(
                 letterSpacing = 0.8.sp,
             )
 
-            if (!hasPermission) {
+            if (!hasNearbyWifiPermission) {
                 PermissionRequestCard(
-                    onGrant = { permissionLauncher.launch(Manifest.permission.NEARBY_WIFI_DEVICES) },
+                    onGrant = {
+                        val permissions = buildList {
+                            add(Manifest.permission.NEARBY_WIFI_DEVICES)
+                            if (!hasBluetoothConnectPermission) add(Manifest.permission.BLUETOOTH_CONNECT)
+                        }
+                        permissionLauncher.launch(permissions.toTypedArray())
+                    },
                 )
             } else {
                 players.forEach { player ->
@@ -262,6 +330,11 @@ private fun PermissionRequestCard(onGrant: () -> Unit) {
         Text(
             "Spindle needs the \"Nearby devices\" permission to find BluOS players on your network.",
             style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
+            "Also asks for Bluetooth access, so a connected device can show its real name above.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Button(onClick = onGrant) { Text("Grant access") }
     }

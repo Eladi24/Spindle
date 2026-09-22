@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
@@ -47,6 +49,17 @@ class LocalOutput @Inject constructor(
 
     override val capabilities = OutputCapabilities(canSeek = true, canSetVolume = true, isGapless = true)
 
+    // null = automatic (Android's own routing — follows a connected Bluetooth
+    // device when one exists). Set via the output picker's "This phone" sub-routes.
+    private val _preferredRouteId = MutableStateFlow<Int?>(null)
+    val preferredRouteId: StateFlow<Int?> = _preferredRouteId.asStateFlow()
+
+    /** [route] null clears the pin and returns to Android's automatic routing. */
+    fun setPreferredRoute(route: LocalRoute?) {
+        player.setPreferredAudioDevice(route?.device)
+        _preferredRouteId.value = route?.id
+    }
+
     private var currentItem: QueueItem? = null
 
     // VOLUME_CHANGED_ACTION isn't public API, but the string is stable across
@@ -58,6 +71,23 @@ class LocalOutput @Inject constructor(
             if (streamType == AudioManager.STREAM_MUSIC) {
                 _volume.value = currentSystemVolumePercent()
             }
+        }
+    }
+
+    // Android remembers a separate STREAM_MUSIC level per output route (a
+    // Bluetooth device typically reports its own "absolute volume", distinct
+    // from the phone speaker's) — switching routes changes what
+    // getStreamVolume() returns without necessarily firing
+    // VOLUME_CHANGED_ACTION. Without this, the displayed volume goes stale
+    // on connect/disconnect and only self-corrects (with a visible jump) the
+    // next time the user touches the slider, which itself reads/writes the
+    // stale value first. Found on-device (A73 + Bluetooth earbuds).
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) {
+            _volume.value = currentSystemVolumePercent()
+        }
+        override fun onAudioDevicesRemoved(removedDevices: Array<AudioDeviceInfo>) {
+            _volume.value = currentSystemVolumePercent()
         }
     }
 
@@ -75,6 +105,7 @@ class LocalOutput @Inject constructor(
             IntentFilter("android.media.VOLUME_CHANGED_ACTION"),
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+        audioManager.registerAudioDeviceCallback(deviceCallback, null)
     }
 
     private fun currentSystemVolumePercent(): Int {

@@ -26,6 +26,10 @@
     <!-- Some devices silently drop mDNS multicast packets without this held
          for the duration of discovery. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Only for showing a connected Bluetooth output's real name in the
+         picker (LocalAudioRoutes) — API 31+; selecting it still works without
+         this, just with a generic "Bluetooth device" label. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <application
         android:name=".App"

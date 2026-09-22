@@ -570,7 +570,7 @@ io/github/eladimany/spindle/
 │                            BluOsDiscovery, NodeTrackEnd, IcyName
 │                            (Phase 2, see below)
 ├── playback/                AudioOutput, MediaSource, LocalOutput, NodeOutput,
-│                            AudioOutputSwitcher, QueueManager,
+│                            AudioOutputSwitcher, LocalAudioRoutes, QueueManager,
 │                            PlaybackController, PlaybackService
 └── ui/
     ├── navigation/          Routes, AppNavHost (bottom bar + NavHost)
@@ -833,6 +833,66 @@ tappable chip showing "PLAYING ON" + the active output's name.
 - **Not yet tested against a real Node** — same caveat as `NodeOutput`
   itself. First real run is where to check whether `NEARBY_WIFI_DEVICES` +
   the multicast lock actually surface a player on your network at all.
+
+### In-app Bluetooth-vs-speaker routing — 2026-09-22, found on-device (A73)
+
+User feedback after installing: with Bluetooth earbuds connected, "This
+phone" showed as active but didn't mean speaker — and the picker had no
+way to choose between the speaker and the earbuds at all. This is a
+separate axis from `OutputTarget` (Local vs. a BluOS Node) — it's *which
+local device* "This phone" actually plays through — so it doesn't touch
+`AudioOutputSwitcher`.
+
+- **`LocalAudioRoutes`** (new) watches `AudioManager.getDevices()` +
+  `AudioDeviceCallback` for the built-in speaker, a connected Bluetooth
+  device, or wired headphones. **`LocalOutput.setPreferredRoute(route)`**
+  pins ExoPlayer's actual output via `ExoPlayer.setPreferredAudioDevice()`
+  (`route = null` = clear the pin, back to Android's own automatic
+  routing).
+- **First on-device bug: two rows both read "Bluetooth device"**, and one
+  of them silently played through the speaker instead of the earbuds. Cause:
+  the same physical earbuds show up as **two separate `AudioDeviceInfo`
+  entries** — `TYPE_BLUETOOTH_A2DP` (music) and `TYPE_BLUETOOTH_SCO` (the
+  voice-call profile: mono, 8/16kHz). Pinning ExoPlayer's *media* AudioTrack
+  to the SCO one doesn't actually route media there; it silently falls back
+  to the speaker. Fix: `LocalAudioRoutes` only maps `TYPE_BLUETOOTH_A2DP` to
+  `LocalRouteKind.BLUETOOTH`; SCO is excluded entirely, not merged.
+- **Second: "This phone" was ambiguous.** It used to clear the pin
+  (`null` = "automatic"), and Android's automatic routing *prefers a
+  connected Bluetooth device* — so "This phone" silently meant Bluetooth
+  whenever one was connected, not the speaker, which is what the label
+  actually promises. Fixed: `OutputPickerViewModel.selectLocal()` now
+  looks up the actual speaker `LocalRoute` and pins it explicitly, same
+  call path as picking any other route. The now-redundant "Speaker" row is
+  filtered out of the "OUTPUT DEVICE" sub-section for the same reason (it's
+  exactly what "This phone" already does) — that section only lists routes
+  *other than* the speaker, and only appears when at least one exists.
+- **Third: the real device name never showed, even after granting
+  permissions once.** `AudioDeviceInfo.getProductName()` needs
+  `BLUETOOTH_CONNECT` (API 31+) for a real Bluetooth name. That request was
+  bundled into the *same* "Grant access" button as `NEARBY_WIFI_DEVICES` —
+  but that button is gated on `!hasNearbyWifiPermission`, so on a device
+  that had already granted the network permission in an earlier test
+  session, the button (and therefore the Bluetooth request) never showed at
+  all. Fixed by decoupling: a separate "Show the Bluetooth device's real
+  name" `TextButton` appears under the Bluetooth row specifically when
+  `!hasBluetoothConnectPermission`, independent of the network permission's
+  own card. (Confirmed on-device: both are ordinary persistent runtime
+  grants, not the one-time location/camera/mic-style prompts — once
+  granted, neither button reappears.)
+- **Fourth, unrelated to the picker itself: the volume slider went stale
+  across a Bluetooth connect/disconnect**, only correcting itself (with a
+  visible jump) the next time the user touched it. Cause: Android keeps a
+  *separate remembered `STREAM_MUSIC` level per output route* — a Bluetooth
+  device typically reports its own "absolute volume" distinct from the
+  phone speaker's — and switching routes updates what
+  `AudioManager.getStreamVolume()` returns without reliably firing
+  `VOLUME_CHANGED_ACTION`. `LocalOutput` only ever refreshed `_volume` from
+  that broadcast, construction time, or its own `setVolume()` call, so a
+  route-driven change fell through every path. Fixed by also registering an
+  `AudioDeviceCallback` on `LocalOutput` itself (separate registration from
+  `LocalAudioRoutes`' own — different concerns, no need to couple them) that
+  re-reads `currentSystemVolumePercent()` on every device add/remove.
 
 ## Library scanning — folder exclusion (not in the original plan, now permanent)
 
