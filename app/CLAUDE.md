@@ -156,6 +156,19 @@ built into the local-only path.
   lifted state (`shadow`, `scale`, `primaryContainer` background, tinted
   handle icon) driven purely by `isDragging`, since there'd been no feedback
   at all before.
+- **Compute the swap threshold from a row height measured once at drag start
+  (via `LazyListState.layoutInfo`), not a value cached from whichever row
+  happened to report it first** (the original bug — a stale/wrong height
+  miscalibrates the threshold and reads as "jumpy"). But don't re-read
+  `layoutInfo` *inside* the per-swap loop either — a state update to the
+  backing list doesn't retroactively fix up `layoutInfo.visibleItemsInfo`
+  until the next measure/layout pass, so a loop that re-queries it mid-swap
+  is acting on stale offsets and silently swaps the wrong pair. A fast drag
+  with few pointer-move events (real flicks, and `adb shell input
+  draganddrop` alike) spans several rows per `onDrag` callback, so the swap
+  step still needs its own `while` loop over the cached height — a single
+  conditional swap per callback under-corrects and the drag quietly stalls
+  partway there.
 
 ## Package layout (current)
 

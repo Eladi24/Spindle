@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
@@ -38,7 +39,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -64,7 +64,8 @@ fun QueueScreen(
     var displayItems by remember(queueState.items) { mutableStateOf(queueState.items) }
     var draggingId by remember { mutableStateOf<String?>(null) }
     var dragDeltaY by remember { mutableFloatStateOf(0f) }
-    var itemHeightPx by remember { mutableFloatStateOf(0f) }
+    var rowHeightPx by remember { mutableFloatStateOf(0f) }
+    val listState = rememberLazyListState()
 
     val currentItemId = queueState.items.getOrNull(queueState.currentIndex)?.id
 
@@ -96,6 +97,7 @@ fun QueueScreen(
             // below, just one level up — flipping it mid-gesture changes the LazyColumn's
             // own modifier chain while a descendant's pointerInput is active, which can
             // tear down and cancel that gesture partway through a longer drag.
+            state = listState,
             modifier = Modifier.padding(innerPadding).fillMaxSize(),
         ) {
             itemsIndexed(displayItems, key = { _, item -> item.id }) { _, item ->
@@ -105,10 +107,12 @@ fun QueueScreen(
                     // Modifier. Swapping modifier *chains* (rather than just a param)
                     // on an ancestor mid-gesture tears down and recreates the child's
                     // pointerInput node, which cancels the drag the instant it starts.
-                    // Disabling just the placement animation via a null spec keeps the
-                    // modifier chain's identity stable instead.
+                    // Disabling the placement animation for EVERYONE (not just the
+                    // dragged row) while any drag is active — otherwise a fast drag
+                    // across several rows retriggers each neighbor's spring mid-flight
+                    // on every swap, which is what read as "jumpy".
                     modifier = Modifier.animateItem(
-                        placementSpec = if (isDragging) null else spring(stiffness = Spring.StiffnessMediumLow),
+                        placementSpec = if (draggingId != null) null else spring(stiffness = Spring.StiffnessMediumLow),
                     ),
                 ) {
                     QueueRow(
@@ -122,33 +126,42 @@ fun QueueScreen(
                             displayItems = displayItems.filter { it.id != item.id }
                         },
                         fetchArtworkUri = viewModel::artworkUriFor,
-                        onMeasuredHeight = { itemHeightPx = it },
                         onDragStart = {
                             draggingId = item.id
                             dragDeltaY = 0f
+                            // Measured fresh from the live layout right as the drag starts —
+                            // guaranteed to be this item's real on-screen height (divider
+                            // included, since it's part of the same itemsIndexed slot) at
+                            // this exact moment, not a value some other row reported earlier
+                            // that may since have drifted.
+                            rowHeightPx = listState.layoutInfo.visibleItemsInfo
+                                .find { it.key == item.id }?.size?.toFloat() ?: 0f
                         },
                         onDrag = { delta ->
                             dragDeltaY += delta
-                            if (itemHeightPx > 0f) {
-                                // Half-item hysteresis, and a loop rather than a single
-                                // step, so a fast flick across several rows in one
-                                // callback still lands correctly instead of stalling.
-                                while (dragDeltaY > itemHeightPx / 2f) {
-                                    val currentIndex = displayItems.indexOfFirst { it.id == item.id }
-                                    if (currentIndex >= displayItems.lastIndex) break
-                                    displayItems = displayItems.toMutableList().apply {
-                                        add(currentIndex + 1, removeAt(currentIndex))
-                                    }
-                                    dragDeltaY -= itemHeightPx
+                            if (rowHeightPx <= 0f) return@QueueRow
+                            // Half-item hysteresis, and a loop rather than a single step, so
+                            // a fast flick across several rows in one callback still lands
+                            // correctly instead of stalling partway. Re-deriving the target
+                            // index from displayItems each iteration (rather than reading
+                            // LazyListState.layoutInfo again) matters here: layoutInfo only
+                            // reflects a swap after the next measure/layout pass, so reading
+                            // it mid-loop would see stale offsets and swap the wrong pair.
+                            while (dragDeltaY > rowHeightPx / 2f) {
+                                val currentIndex = displayItems.indexOfFirst { it.id == item.id }
+                                if (currentIndex >= displayItems.lastIndex) break
+                                displayItems = displayItems.toMutableList().apply {
+                                    add(currentIndex + 1, removeAt(currentIndex))
                                 }
-                                while (dragDeltaY < -itemHeightPx / 2f) {
-                                    val currentIndex = displayItems.indexOfFirst { it.id == item.id }
-                                    if (currentIndex <= 0) break
-                                    displayItems = displayItems.toMutableList().apply {
-                                        add(currentIndex - 1, removeAt(currentIndex))
-                                    }
-                                    dragDeltaY += itemHeightPx
+                                dragDeltaY -= rowHeightPx
+                            }
+                            while (dragDeltaY < -rowHeightPx / 2f) {
+                                val currentIndex = displayItems.indexOfFirst { it.id == item.id }
+                                if (currentIndex <= 0) break
+                                displayItems = displayItems.toMutableList().apply {
+                                    add(currentIndex - 1, removeAt(currentIndex))
                                 }
+                                dragDeltaY += rowHeightPx
                             }
                         },
                         onDragEnd = {
@@ -177,7 +190,6 @@ private fun QueueRow(
     onClick: () -> Unit,
     onRemove: () -> Unit,
     fetchArtworkUri: suspend (Track) -> String?,
-    onMeasuredHeight: (Float) -> Unit,
     onDragStart: () -> Unit,
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
@@ -185,7 +197,6 @@ private fun QueueRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .onGloballyPositioned { onMeasuredHeight(it.size.height.toFloat()) }
             .graphicsLayer { translationY = dragOffsetY }
             .zIndex(if (isDragging) 1f else 0f)
             // Lifted look while actively dragging — a real elevation shadow plus a
