@@ -583,13 +583,19 @@ io/github/eladimany/spindle/
     │                        from ui/library/FolderBrowseScreen (browsing)
     ├── player/              PlayerViewModel (shared, Activity-scoped),
     │                        NowPlayingScreen
+    ├── output/              OutputPickerSheet/VM — pick "This phone" vs. a
+    │                        discovered BluOS Node (Phase 2, see below)
     └── playlists/           PlaylistsScreen/VM, PlaylistDetailScreen/VM
 ```
 
-`MediaHttpServer`/`TokenRegistry`/`BluOsClient`/`BluOsDiscovery`/`NodeOutput`/
-`AudioOutputSwitcher` are all built and wired — see below. **Only the picker
-UI itself is left** — nothing in the app can trigger `switchTo()` yet, so in
-practice the app still always plays through `LocalOutput`.
+Phase 2 is functionally complete: `MediaHttpServer`/`TokenRegistry`/
+`BluOsClient`/`BluOsDiscovery`/`NodeOutput`/`AudioOutputSwitcher`/
+`OutputPickerSheet` are all built and wired end to end — see below. **None
+of it has been exercised against a real Node yet** — that's the next step,
+and where the unverified bits noted throughout this section (the
+`state == "pause"` guess, the 2s end-of-track tolerance, non-ASCII
+`icy-name`, the multicast lock, `NEARBY_WIFI_DEVICES` actually surfacing
+players) get confirmed or fixed.
 
 ### Phase 2 — MediaHttpServer + TokenRegistry — 2026-09-22
 
@@ -789,6 +795,44 @@ this file).
   first step, so an extra call here would race and tear down the *new*
   connection instead of the old one. Local → Node needs no explicit
   disconnect at all (nothing was connected).
+
+### Phase 2 — OutputPickerSheet — 2026-09-22
+
+The picker UI, from a mocked-up Artifact comparison — user picked the
+status-cards style (each output as its own tonally-elevated card, reusing
+the exact treatment `TrackRow`/`QueueRow` already use for the current
+track) over a plain checkmark-list. Reachable by tapping Now Playing's top
+bar — the existing static "PLAYING FROM / Library" label is now a live,
+tappable chip showing "PLAYING ON" + the active output's name.
+
+- `PlayerViewModel` now also injects `AudioOutputSwitcher` directly (not
+  routed through `PlaybackController`) just to read `target` for that chip
+  — `PlaybackController` itself still never sees `AudioOutputSwitcher`,
+  `NodeOutput`, or `LocalOutput`, same boundary as everywhere else in this
+  section.
+- `OutputPickerViewModel.startDiscovery()`/`stopDiscovery()` are called
+  from a `DisposableEffect` keyed on the granted-permission state in
+  `OutputPickerSheet`, not from the `ViewModel`'s own lifecycle — a
+  `hiltViewModel()` call here is Activity-scoped like every other screen
+  ViewModel in this app (no nav-graph back-stack entry backs it), so the
+  instance outlives the sheet being open; without this the network scan
+  would keep running in the background after the sheet is dismissed.
+- **The `NEARBY_WIFI_DEVICES` runtime request finally lands here** — it's
+  requested locally in `OutputPickerSheet` via
+  `rememberLauncherForActivityResult`, not at `MainActivity`'s root like
+  the audio-library permission gate, since it's genuinely contextual: nothing
+  else in the app needs it, and gating the whole app launch on it (like
+  `AudioPermissionScreen` does) would be wrong for a permission only the
+  Node feature needs. Below API 33 `hasNearbyWifiPermission()` returns
+  `true` unconditionally and the permission section always shows outputs.
+- Manual IP entry: typed in as a bare host string, wrapped as
+  `BluOsPlayer(name = host, host = host)` — no format validation. If it's
+  wrong, `NodeOutput.connect()`'s failure surfaces through the same
+  `errorMessage` path as a real discovered player failing to connect,
+  rather than a separate validation error.
+- **Not yet tested against a real Node** — same caveat as `NodeOutput`
+  itself. First real run is where to check whether `NEARBY_WIFI_DEVICES` +
+  the multicast lock actually surface a player on your network at all.
 
 ## Library scanning — folder exclusion (not in the original plan, now permanent)
 

@@ -1,11 +1,16 @@
 # Local Music Player with BluOS Streaming — Project Plan
 
-**Status:** v3 — Phase 0 complete. Phase 1 in progress: scanning, folder
-exclusion, Room, full Browse UI + navigation, and local playback (queue,
-`LocalOutput`, notification, Now Playing) are working end-to-end on-device.
-Search, the queue-reorder UI, full playlist CRUD, and the polish pass are
-still open — see `PHASE1.md` for the current checklist.
-Protocol detail: `bluos-api.md`. Current tasks: `PHASE1.md`.
+**Status:** v4 — Phase 0 and Phase 1 complete (local playback, working
+end-to-end on-device; see `PHASE1.md` for the two items left postponed —
+accessibility pass, S25+ full-library run). Phase 2 is functionally built:
+`MediaHttpServer`, `TokenRegistry`, `BluOsClient`, `BluOsDiscovery`,
+`NodeOutput`, `AudioOutputSwitcher`, and the `OutputPickerSheet` UI are all
+in place and wired together. **None of it has been exercised against a
+real Node yet** — that's the next step, and several deliberately-deferred
+or best-guess pieces (noted throughout CLAUDE.md's Phase 2 sections) get
+confirmed or fixed there.
+Protocol detail: `bluos-api.md`. Design/decision log: `CLAUDE.md`'s dated
+Phase 2 entries.
 **Target device:** Galaxy S25+ (primary), Galaxy A73 (secondary test device)
 **Target player:** Bluesound Node (BluOS), LAN only
 

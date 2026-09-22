@@ -3,6 +3,7 @@ package io.github.eladimany.spindle.ui.player
 import android.os.VibrationEffect
 import android.os.Vibrator
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -65,6 +67,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.playback.QueueManager
 import io.github.eladimany.spindle.ui.components.TrackArtwork
+import io.github.eladimany.spindle.ui.output.OutputPickerSheet
+import io.github.eladimany.spindle.ui.output.displayName
 import io.github.eladimany.spindle.ui.playlists.AddToPlaylistSheet
 import kotlinx.coroutines.delay
 
@@ -111,6 +115,8 @@ fun NowPlayingScreen(
     var displayPositionMs by remember { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showOutputPicker by remember { mutableStateOf(false) }
+    val outputTarget by viewModel.outputTarget.collectAsStateWithLifecycle()
 
     LaunchedEffect(playbackState) {
         val playing = playbackState as? PlaybackState.Playing
@@ -163,16 +169,32 @@ fun NowPlayingScreen(
                 IconButton(onClick = onBack, colors = heroIconButtonColors()) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = HeroOnBackdrop)
                 }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "PLAYING FROM",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = HeroOnBackdropFaint,
-                    )
-                    Text(
-                        "Library",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = HeroOnBackdrop,
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { showOutputPicker = true }
+                        .background(HeroOnBackdrop.copy(alpha = 0.10f))
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "PLAYING ON",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HeroOnBackdropFaint,
+                        )
+                        Text(
+                            outputTarget.displayName(),
+                            style = MaterialTheme.typography.labelLarge,
+                            color = HeroOnBackdrop,
+                        )
+                    }
+                    Icon(
+                        Icons.Filled.KeyboardArrowDown,
+                        contentDescription = null,
+                        tint = HeroOnBackdropFaint,
+                        modifier = Modifier.size(16.dp),
                     )
                 }
                 Row {
@@ -320,6 +342,10 @@ fun NowPlayingScreen(
 
     if (showAddToPlaylist) {
         AddToPlaylistSheet(trackIds = listOf(item.track.id), onDismiss = { showAddToPlaylist = false })
+    }
+
+    if (showOutputPicker) {
+        OutputPickerSheet(onDismiss = { showOutputPicker = false })
     }
 }
 

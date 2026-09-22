@@ -5,6 +5,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.library.ArtworkRepository
+import io.github.eladimany.spindle.playback.AudioOutputSwitcher
+import io.github.eladimany.spindle.playback.OutputTarget
 import io.github.eladimany.spindle.playback.PlaybackController
 import io.github.eladimany.spindle.playback.QueueManager
 import io.github.eladimany.spindle.playback.QueueState
@@ -19,11 +21,16 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val controller: PlaybackController,
     private val artworkRepository: ArtworkRepository,
+    audioOutputSwitcher: AudioOutputSwitcher,
 ) : ViewModel() {
 
     val playbackState: StateFlow<PlaybackState> = controller.playbackState
     val queueState: StateFlow<QueueState> = controller.queueState
     val volume: StateFlow<Int> = controller.volume
+    // Only the output picker actually needs to know NodeOutput/LocalOutput exist —
+    // PlaybackController itself never does (see its own doc comment) — so this reads
+    // AudioOutputSwitcher directly rather than routing "current target" through it.
+    val outputTarget: StateFlow<OutputTarget> = audioOutputSwitcher.target
 
     fun togglePlayPause() = controller.togglePlayPause()
     fun next() = controller.next()
