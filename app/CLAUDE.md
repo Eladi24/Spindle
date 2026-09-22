@@ -73,6 +73,7 @@ Two interfaces decide everything. Keep them clean.
 ```kotlin
 interface AudioOutput {                  // where sound comes out
     val state: StateFlow<PlaybackState>
+    val volume: StateFlow<Int>            // 0-100, this output's own source of truth
     val capabilities: OutputCapabilities // canSeek, canSetVolume, isGapless
     suspend fun play(item: QueueItem)
     suspend fun pause(); suspend fun resume(); suspend fun stop()
@@ -85,6 +86,10 @@ interface MediaSource {                  // where audio comes from
 }
 ```
 
+`volume` is a `StateFlow`, not a plain getter, because `LocalOutput` needs to push
+live updates when the hardware volume buttons are pressed (see below) — a
+one-shot getter couldn't represent that.
+
 `PlaybackState` (in `core/model`) is the shared vocabulary both outputs speak:
 `Idle`, `Buffering`, `Playing`, `Paused`, `Ended`, `Error`. `Ended` exists
 specifically so `PlaybackController` has one clean signal for "advance the
@@ -95,8 +100,15 @@ capturedAtMs)`) rather than expecting a push every second — this is required
 for Phase 2 (BluOS's long-poll doesn't push `secs`), so the habit is already
 built into the local-only path.
 
-- `LocalOutput` — Media3/ExoPlayer, phone speaker/headphones. **Built.**
-- `NodeOutput` — Ktor HTTP server + BluOS REST. **Not built yet (Phase 2).**
+- `LocalOutput` — Media3/ExoPlayer, phone speaker/headphones. **Built.** Volume
+  goes through `AudioManager`/`STREAM_MUSIC` directly, **not** an ExoPlayer-internal
+  gain multiplier — a gain on top of system volume is why an app slider can show
+  100% while the phone is really at 30%, and can't be pushed any louder. A
+  `BroadcastReceiver` on `android.media.VOLUME_CHANGED_ACTION` (not public API,
+  but a stable string used this way across the ecosystem) keeps the app's
+  slider in sync when the hardware buttons are pressed.
+- `NodeOutput` — Ktor HTTP server + BluOS REST. **Not built yet (Phase 2).** Its
+  volume will come from `/SyncStatus` polling, unrelated to phone system volume.
 - `QueueManager` owns shuffle/repeat/next/previous/move/remove. Shuffle
   permutes an index list over a stable backing list of `QueueItem`s, never the
   list itself, so disabling shuffle restores the exact original order. Fully
@@ -116,6 +128,21 @@ built into the local-only path.
   session, which never happens in this same-process setup, and
   `startForegroundService()` without a timely `startForeground()` crashes with
   `ForegroundServiceDidNotStartInTimeException` (hit and fixed on-device).
+
+### Drag-to-reorder in a `LazyColumn` (QueueScreen) — two gotchas hit here
+
+- **Never toggle a wrapping composable between `Modifier` and `Modifier.animateItem()`
+  based on drag state.** Swapping modifier *chains* (not just a parameter) on an
+  ancestor while a child's `pointerInput` gesture is active tears down and
+  recreates that child's pointer-input node, cancelling the gesture the instant
+  it starts. Always call `animateItem()` unconditionally; vary its
+  `placementSpec` (`null` while dragging that item) to disable just the
+  placement animation without changing the modifier's identity.
+- **The drag handle's touch target must be a real 48dp**, not just the icon's
+  natural ~24dp. `detectDragGesturesAfterLongPress` on a bare small `Icon`
+  works fine in principle (verified via `adb shell input draganddrop` hitting
+  its exact bounds) but is unreliable for an actual finger — wrap it in a
+  `Box(Modifier.size(48.dp))`.
 
 ## Package layout (current)
 

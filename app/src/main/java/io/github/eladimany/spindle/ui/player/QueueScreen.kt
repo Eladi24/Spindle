@@ -1,8 +1,11 @@
 package io.github.eladimany.spindle.ui.player
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -85,14 +88,24 @@ fun QueueScreen(
             return@Scaffold
         }
 
-        LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding).fillMaxSize(),
+            // Disabled while dragging so the list's own scroll gesture can't compete
+            // with the drag once it's active.
+            userScrollEnabled = draggingId == null,
+        ) {
             itemsIndexed(displayItems, key = { _, item -> item.id }) { _, item ->
                 val isDragging = item.id == draggingId
                 Column(
-                    // Animate the *other* rows sliding to make room; the dragged
-                    // row's position is already driven directly by the finger via
-                    // dragOffsetY, so animating its placement too would fight it.
-                    modifier = if (isDragging) Modifier else Modifier.animateItem(),
+                    // Always call animateItem() — never toggle between it and a plain
+                    // Modifier. Swapping modifier *chains* (rather than just a param)
+                    // on an ancestor mid-gesture tears down and recreates the child's
+                    // pointerInput node, which cancels the drag the instant it starts.
+                    // Disabling just the placement animation via a null spec keeps the
+                    // modifier chain's identity stable instead.
+                    modifier = Modifier.animateItem(
+                        placementSpec = if (isDragging) null else spring(stiffness = Spring.StiffnessMediumLow),
+                    ),
                 ) {
                     QueueRow(
                         item = item,
@@ -203,11 +216,11 @@ private fun QueueRow(
         IconButton(onClick = onRemove) {
             Icon(Icons.Default.Delete, contentDescription = "Remove from queue")
         }
-        Icon(
-            Icons.Default.DragHandle,
-            contentDescription = "Drag to reorder",
+        // 48dp is Material's minimum touch target — the icon itself is only 24dp,
+        // too small to reliably long-press-and-drag with a real finger.
+        Box(
             modifier = Modifier
-                .padding(8.dp)
+                .size(48.dp)
                 .pointerInput(item.id) {
                     detectDragGesturesAfterLongPress(
                         onDragStart = { onDragStart() },
@@ -219,6 +232,9 @@ private fun QueueRow(
                         onDragCancel = { onDragEnd() },
                     )
                 },
-        )
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Default.DragHandle, contentDescription = "Drag to reorder")
+        }
     }
 }
