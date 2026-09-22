@@ -64,11 +64,12 @@ class MediaHttpServer @Inject constructor(
         routing {
             get("/t/{token}") {
                 val token = call.parameters["token"]
-                val trackUri = token?.let(tokenRegistry::resolve)
-                if (trackUri == null) {
+                val served = token?.let(tokenRegistry::resolve)
+                if (served == null) {
                     call.respond(HttpStatusCode.NotFound)
                 } else {
-                    serveFile(Uri.parse(trackUri), call)
+                    call.response.header("icy-name", served.icyName)
+                    serveFile(Uri.parse(served.uri), call)
                 }
             }
         }

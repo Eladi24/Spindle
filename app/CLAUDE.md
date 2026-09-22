@@ -567,9 +567,10 @@ io/github/eladimany/spindle/
 │   ├── server/              MediaHttpServer, TokenRegistry, HttpRange,
 │   │                        NetworkAddress (Phase 2, see below)
 │   └── bluos/               BluOsClient, BluOsXmlParser, BluOsStatus,
-│                            BluOsDiscovery (Phase 2, see below)
-├── playback/                AudioOutput, MediaSource, LocalOutput, QueueManager,
-│                            PlaybackController, PlaybackService
+│                            BluOsDiscovery, NodeTrackEnd, IcyName
+│                            (Phase 2, see below)
+├── playback/                AudioOutput, MediaSource, LocalOutput, NodeOutput,
+│                            QueueManager, PlaybackController, PlaybackService
 └── ui/
     ├── navigation/          Routes, AppNavHost (bottom bar + NavHost)
     ├── components/          TrackArtwork/AlbumArtwork, TrackRow, MiniPlayerBar
@@ -584,10 +585,12 @@ io/github/eladimany/spindle/
     └── playlists/           PlaylistsScreen/VM, PlaylistDetailScreen/VM
 ```
 
-`NodeOutput` doesn't exist yet — the last piece of Phase 2, wiring
-`BluOsClient` + `MediaHttpServer` together into an `AudioOutput`.
-`MediaHttpServer`/`TokenRegistry`/`BluOsClient`/`BluOsDiscovery` are built —
-see below.
+`MediaHttpServer`/`TokenRegistry`/`BluOsClient`/`BluOsDiscovery`/`NodeOutput`
+are all built — see below. **`NodeOutput` is not wired into
+`PlaybackController`/DI yet** — `PlaybackModule` still `@Binds`
+`AudioOutput` to `LocalOutput` unconditionally, and switching outputs at
+runtime needs an output-switcher mechanism that doesn't exist yet (the
+output-switcher UI task).
 
 ### Phase 2 — MediaHttpServer + TokenRegistry — 2026-09-22
 
@@ -695,6 +698,63 @@ made a live request yet.
   - `resolveService`/`NsdServiceInfo.host` are deprecated in favor of API
     34's `registerServiceInfoCallback`/`getHostAddresses()` — suppressed
     deliberately, not fixed, since minSdk here is 26.
+
+### Phase 2 — NodeOutput — 2026-09-22
+
+Wires `BluOsClient` + `MediaHttpServer` into an `AudioOutput`. **Not wired
+into `PlaybackController`/DI, and not yet exercised against a real
+Node** — see the package-layout note above for why.
+
+- **All mutable state is confined to one `Dispatchers.Main.immediate`
+  scope** (`currentItem`, `lastEtag`, `lastKnownSecs`/`lastKnownTotalSeconds`,
+  `_state`) — the long-poll loop runs continuously in the background while
+  `play()`/`pause()`/`stop()`/etc. get called directly, and both sides touch
+  the same vars. Rather than adding locks, this reuses the confinement
+  `PlaybackController` already relies on (its own scope is
+  `Main.immediate`, and it's the only thing that calls into `NodeOutput`'s
+  suspend functions) — one thread, no races, by construction rather than by
+  discipline.
+- **`connect(player)`/`disconnect()` are extra public API, not part of
+  `AudioOutput`** — the interface has no notion of "which Node," only "the
+  current output." `connect` starts `MediaHttpServer` bound to the phone's
+  WLAN IP and throws if the phone isn't on WiFi at all (never silently
+  no-ops there — whoever ends up calling this, the output-switcher UI, is
+  expected to catch it and tell the user). `disconnect` is the real
+  "stop using this output" lifecycle hook; the interface's own `stop()`
+  only stops playback and leaves the Node connection alive, same
+  distinction `LocalOutput.stop()` already draws for the player instance.
+- **Auto-advance and the `state == "stop"` ambiguity** (bluos-api.md:
+  it means both "track ended" and "user pressed stop in the BluOS app",
+  and `totlen`/`secs` disappear from the document the instant it collapses
+  to `stop`, so they must be captured from the *previous* status first) —
+  pulled out to `NodeTrackEnd.isNaturalEnd()`, pure and unit tested
+  (`NodeTrackEndTest`, 6 cases), same reasoning as `HttpRange`. Its
+  2-second tolerance is a starting heuristic, not a Phase-0 measurement —
+  tune it once this is actually tested against the Node.
+- **`status.state == "pause"` is an unverified guess** — Phase 0 only ever
+  observed `"stream"`/`"stop"` (see `BluOsStatus`'s own doc comment). Kept
+  because the failure mode if wrong is graceful: it just falls through to
+  "unrecognized state, keep the last known one" instead of doing anything
+  actively wrong. Needs confirming on real hardware before this is trusted.
+- **`icy-name` is now sent per track**, closing the loop `MediaHttpServer`
+  left open: `IcyName.forTrack()` (pure, unit tested — `IcyNameTest`, 3
+  cases) builds the one-line `"Artist - Title"` and strips control
+  characters, since a `\r`/`\n` smuggled in from a file's tags could
+  otherwise inject a second header into the HTTP response.
+  `TokenRegistry`/`MediaHttpServer` both updated: a token now resolves to a
+  `ServedTrack(uri, icyName)` instead of a bare URI string, and the server
+  sends that `icy-name` header before serving the file.
+- **`capabilities` is a static `OutputCapabilities(canSeek = true,
+  canSetVolume = true, isGapless = false)`**, not derived from the current
+  track's actual per-source `canSeek` in `/Status` — the `AudioOutput`
+  interface only exposes a plain `val`, not a `StateFlow`, so this is a
+  known simplification pending an interface change, not a guess.
+  `isGapless = false` is the one confirmed hard fact in that line
+  (bluos-api.md: "gapless is not achievable this way").
+- **`volume` has no ground truth** — same reason `BluOsClient` doesn't
+  implement `/SyncStatus`. `setVolume()` fires `/Volume?level=` and updates
+  the local `StateFlow` optimistically; it reflects what we last asked for,
+  not what the Node actually reports.
 
 ## Library scanning — folder exclusion (not in the original plan, now permanent)
 
