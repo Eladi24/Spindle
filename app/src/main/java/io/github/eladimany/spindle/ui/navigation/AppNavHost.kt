@@ -39,6 +39,7 @@ import io.github.eladimany.spindle.ui.player.QueueScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistDetailScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistsScreen
 import io.github.eladimany.spindle.ui.search.SearchScreen
+import io.github.eladimany.spindle.playback.QueueManager
 
 private data class BottomTab(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
 
@@ -59,12 +60,23 @@ fun AppNavHost() {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val isTopLevel = currentRoute in Routes.topLevel
+    // The mini-player belongs everywhere except the two screens that already show full
+    // playback UI of their own — it was previously gated on isTopLevel, which hid it on
+    // every detail screen (album/artist/folder/playlist) and Search too.
+    val showMiniPlayer = currentRoute != Routes.NOW_PLAYING && currentRoute != Routes.QUEUE
     val playbackState by playerViewModel.playbackState.collectAsStateWithLifecycle()
+    val queueState by playerViewModel.queueState.collectAsStateWithLifecycle()
+    // Previewed by the mini-player's swipe crossfade — wrap on repeat-all, otherwise
+    // null past either end, matching QueueManager.next()/previous()'s own boundary rules.
+    val nextTrack = queueState.items.getOrNull(queueState.currentIndex + 1)?.track
+        ?: queueState.items.firstOrNull()?.track.takeIf { queueState.repeatMode == QueueManager.RepeatMode.ALL }
+    val previousTrack = queueState.items.getOrNull(queueState.currentIndex - 1)?.track
+        ?: queueState.items.lastOrNull()?.track.takeIf { queueState.repeatMode == QueueManager.RepeatMode.ALL }
 
     Scaffold(
         bottomBar = {
-            if (isTopLevel) {
-                Column {
+            Column {
+                if (showMiniPlayer) {
                     MiniPlayerBar(
                         playbackState = playbackState,
                         onTogglePlayPause = playerViewModel::togglePlayPause,
@@ -72,7 +84,11 @@ fun AppNavHost() {
                         onPrevious = playerViewModel::previous,
                         onOpenNowPlaying = { navController.navigate(Routes.NOW_PLAYING) },
                         fetchArtworkUri = playerViewModel::artworkUriFor,
+                        nextTrack = nextTrack,
+                        previousTrack = previousTrack,
                     )
+                }
+                if (isTopLevel) {
                     NavigationBar {
                         bottomTabs.forEach { tab ->
                             NavigationBarItem(
