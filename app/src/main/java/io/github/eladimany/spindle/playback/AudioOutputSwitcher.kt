@@ -80,7 +80,15 @@ class AudioOutputSwitcher @Inject constructor(
         if (newTarget == previousTarget) return
 
         val (resumeItem, resumePositionMs) = when (val current = state.value) {
-            is PlaybackState.Playing -> current.item to current.positionMs
+            // Playing.positionMs is a snapshot as of capturedAtMs, not a live
+            // value (see PlaybackState's own doc) — neither output updates it
+            // every second, only on real state changes. Reading it bare here
+            // meant switching outputs minutes into a track jumped back to
+            // wherever the last state change happened to be (found on-device,
+            // testing against the real Node) — interpolate the same way the
+            // seek bar does.
+            is PlaybackState.Playing -> current.item to (current.positionMs + (System.currentTimeMillis() - current.capturedAtMs))
+                .coerceIn(0, current.durationMs.coerceAtLeast(0))
             is PlaybackState.Paused -> current.item to current.positionMs
             is PlaybackState.Buffering -> current.item to 0L
             else -> null to 0L
