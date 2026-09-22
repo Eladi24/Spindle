@@ -53,6 +53,12 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun getById(id: Long): TrackEntity?
 
+    @Query("SELECT * FROM tracks WHERE uri = :uri LIMIT 1")
+    suspend fun getByUri(uri: String): TrackEntity?
+
+    @Query("SELECT * FROM tracks WHERE title LIKE '%' || :title || '%' ORDER BY titleSortKey LIMIT 5")
+    suspend fun findByTitleLike(title: String): List<TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE albumId = :albumId LIMIT 1")
     suspend fun firstTrackForAlbum(albumId: Long): TrackEntity?
 

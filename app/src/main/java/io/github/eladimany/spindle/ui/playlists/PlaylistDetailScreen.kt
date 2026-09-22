@@ -1,5 +1,7 @@
 package io.github.eladimany.spindle.ui.playlists
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -27,6 +30,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,6 +42,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,6 +50,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -51,6 +59,7 @@ import io.github.eladimany.spindle.core.model.PlaylistEntry
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackArtwork
+import kotlinx.coroutines.launch
 
 @Composable
 fun PlaylistDetailScreen(
@@ -70,13 +79,32 @@ fun PlaylistDetailScreen(
     var dragDeltaY by remember { mutableFloatStateOf(0f) }
     var rowHeightPx by remember { mutableFloatStateOf(0f) }
     val listState = rememberLazyListState()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/x-mpegurl"),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            val content = viewModel.exportM3u()
+            context.contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+            snackbarHostState.showSnackbar("Exported ${displayEntries.size} tracks")
+        }
+    }
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(playlist?.name ?: "") },
                 actions = {
+                    IconButton(onClick = {
+                        exportLauncher.launch("${playlist?.name ?: "playlist"}.m3u8")
+                    }) {
+                        Icon(Icons.Default.FileDownload, contentDescription = "Export as M3U")
+                    }
                     IconButton(onClick = { showRenameDialog = true }) {
                         Icon(Icons.Default.Edit, contentDescription = "Rename playlist")
                     }

@@ -58,6 +58,11 @@ class PlaybackController @Inject constructor(
         }
         .stateIn(scope, SharingStarted.Eagerly, null)
 
+    /** Drives the animated-vs-static equalizer glyph on a list row's current track. */
+    val isPlaying: StateFlow<Boolean> = playbackState
+        .map { it is PlaybackState.Playing }
+        .stateIn(scope, SharingStarted.Eagerly, false)
+
     private val _queueState = MutableStateFlow(QueueState())
     val queueState: StateFlow<QueueState> = _queueState.asStateFlow()
 

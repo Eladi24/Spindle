@@ -31,7 +31,9 @@ import io.github.eladimany.spindle.ui.library.MainViewModel
 import io.github.eladimany.spindle.ui.navigation.AppNavHost
 import io.github.eladimany.spindle.ui.permission.AudioPermissionScreen
 import io.github.eladimany.spindle.ui.permission.audioLibraryPermission
+import io.github.eladimany.spindle.ui.splash.SplashScreen
 import io.github.eladimany.spindle.ui.theme.SpindleTheme
+import kotlinx.coroutines.delay
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -59,7 +61,15 @@ class MainActivity : ComponentActivity() {
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                 val isFirstScan = uiState.isScanning && uiState.trackCount == 0
 
+                var showSplash by remember { mutableStateOf(true) }
+                LaunchedEffect(Unit) {
+                    delay(900)
+                    showSplash = false
+                }
+
                 when {
+                    showSplash -> SplashScreen()
+
                     !hasPermission -> Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                         AudioPermissionScreen(
                             onRequestPermission = { launcher.launch(audioLibraryPermission) },

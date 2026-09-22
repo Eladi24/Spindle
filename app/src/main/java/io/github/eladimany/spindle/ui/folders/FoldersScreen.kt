@@ -4,12 +4,20 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -25,19 +33,38 @@ fun FoldersScreen(
     viewModel: FoldersViewModel = hiltViewModel(),
 ) {
     val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
 
-    LazyColumn(modifier = modifier.fillMaxWidth()) {
-        item {
-            Text(
-                text = "Choose which folders are part of your library. Turn off " +
-                    "chat-app voice notes, ringtones, or anything else that isn't music.",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(16.dp),
+    Scaffold(
+        modifier = modifier,
+        topBar = {
+            TopAppBar(
+                title = { Text("Manage folders") },
+                actions = {
+                    IconButton(onClick = viewModel::rescanLibrary, enabled = !isScanning) {
+                        if (isScanning) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = "Rescan library")
+                        }
+                    }
+                },
             )
-        }
-        items(folders, key = { it.id }) { folder ->
-            FolderRow(folder, onToggle = { included -> viewModel.setFolderExcluded(folder.id, !included) })
-            HorizontalDivider()
+        },
+    ) { innerPadding ->
+        LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxWidth()) {
+            item {
+                Text(
+                    text = "Choose which folders are part of your library. Turn off " +
+                        "chat-app voice notes, ringtones, or anything else that isn't music.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
+            items(folders, key = { it.id }) { folder ->
+                FolderRow(folder, onToggle = { included -> viewModel.setFolderExcluded(folder.id, !included) })
+                HorizontalDivider()
+            }
         }
     }
 }

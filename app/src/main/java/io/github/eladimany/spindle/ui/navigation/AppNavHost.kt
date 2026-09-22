@@ -176,6 +176,7 @@ fun AppNavHost() {
             composable(Routes.NOW_PLAYING) {
                 NowPlayingScreen(
                     viewModel = playerViewModel,
+                    onBack = { navController.popBackStack() },
                     onOpenQueue = { navController.navigate(Routes.QUEUE) },
                 )
             }

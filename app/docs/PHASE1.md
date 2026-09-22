@@ -51,10 +51,10 @@ launches showing "Hello"~~ — superseded, app now launches into the real UI.
 - [x] `MediaStoreScanner`: one cursor query, batched insert into Room
 - [x] Off the main thread, progress reported as a `Flow`
 - [x] `LibraryRepository` exposes library data from Room only
-- [ ] Manual "rescan" action in Settings — **not built.** Rescans currently only
-      happen on permission grant, on a folder-exclusion toggle, and via the
-      `ContentObserver`. Add an explicit button if a stuck/stale scan ever
-      needs a manual kick.
+- [x] Manual "rescan" action — a refresh icon on the Manage Folders screen's
+      TopAppBar (`FoldersScreen`), backed by `FoldersViewModel.rescanLibrary()`
+      / `isScanning`. Shares the same underlying scan as permission-grant and
+      folder-exclusion-toggle.
 - [x] `ContentObserver` on the audio collection to detect new files
 
 **Extra, not in the original plan:** per-folder library exclusion — see
@@ -75,8 +75,12 @@ Phase 0 is still open.
       (Tracks, Albums, Artists all paged; per-artist/album/folder track lists
       use plain `Flow<List<T>>` since those are naturally small)
 - [x] Coil for artwork, with a placeholder; never decode art on the main thread
-- [ ] Fast-scroll or alphabet index (3900 tracks is a lot of scrolling) — **not
-      built.**
+- [x] Fast-scroll alphabet index — a draggable A-Z/# rail on the right edge of
+      `TracksScreen`, title-sort only. `TracksViewModel.sectionIndex` derives
+      anchors from the unpaged title-ordered list; the Paging3 config now runs
+      with `enablePlaceholders = true` and a `jumpThreshold` so a scrub jump
+      loads pages around the target instead of paginating through everything
+      in between.
 - [x] Sort options — **Tracks only** (title / date added / year). Albums and
       Artists still sort by name only; add more if it turns out to matter.
 - [x] Empty states (e.g. "No tracks yet") and a loading state for first scan
@@ -122,7 +126,18 @@ repeat-one, and shuffle pinning the currently-playing track to position 0.
       `setAudioAttributes(..., handleAudioFocus = true)`,
       `setHandleAudioBecomingNoisy(true)`) but **not tested with real
       headphones**
-- [ ] Lock screen controls — not explicitly tested
+- [x] Lock screen controls — tested on-device (A73), found and fixed a real
+      bug: no skip button, and "previous" just restarted the current track.
+      Root cause and fix in CLAUDE.md's 2026-09-22 entry
+      (`QueueAwareForwardingPlayer` + `MediaSession.Callback`). Verified via
+      `dumpsys media_session` (actions bitmask now advertises
+      `SKIP_TO_NEXT`), hardware media-key simulation (correctly walked the
+      real queue both directions), and a screenshot of the actual lock
+      screen widget now showing the skip button. One sub-case — tapping the
+      widget's own on-screen buttons rather than a hardware key — wasn't
+      conclusively verified by adb (a synthetic tap didn't register on the
+      secure keyguard surface, likely a testing-tool limit, not an app bug);
+      worth one real fingertip tap to fully close out.
 - [x] `capabilities` reports `canSeek=true, isGapless=true`
 
 **Check:** confirmed plays with the screen locked and survives navigating away
@@ -151,14 +166,44 @@ just adds the UI and an app-side `StateFlow<Int>` to track the last-set level
       (`TrackActionsSheet`) or use the playlist-icon in Album/Artist detail's
       TopAppBar for the whole album/artist; both open `AddToPlaylistSheet`
 - [x] Reorder within a playlist — same drag-to-reorder pattern as QueueScreen
-- [ ] M3U import and export — not built
+- [x] M3U import and export — export via SAF `CreateDocument` from a
+      playlist's TopAppBar (`PlaylistRepository.exportM3u`); import via SAF
+      `OpenDocument` from the Playlists screen, creating a new playlist
+      (`PlaylistRepository.importM3u`). Tracks have no filesystem path (see
+      `Track.uri`), so exported rows carry the content URI — exact round-trip
+      back into Spindle — plus an `#EXTINF` artist/title line used as a
+      title-search fallback when importing a file from elsewhere or after a
+      stale URI.
 
 ## 11. Polish before Phase 2 — in progress
 
 - [x] Custom color scheme — fixed indigo/violet Material 3 scheme replacing
       the stock template's dynamic-color-only setup (see CLAUDE.md's "Color
       scheme" section); dynamic color is still available but off by default
-- [ ] Rotation and process-death state restoration — untested
+- [x] Rotation — tested on-device (A73) via adb (`user_rotation`). No crash,
+      queue/position survived two Activity recreations without interruption.
+      Surfaced and fixed a real bug: Now Playing's artwork sized itself off
+      screen *width*, which is the long edge in landscape, and blew up past
+      the screen over the controls — see CLAUDE.md's 2026-09-22 entry.
+      Landscape now has a secondary, not-yet-fixed rough edge: in a short
+      landscape window, title/artist can end up needing a scroll to see
+      instead of showing directly — correctness is fine (nothing crashes or
+      silently overlaps), but the layout wants a real landscape-specific pass
+      (side-by-side art + text) rather than another size tweak.
+- [ ] Process-death state restoration — **inconclusive.** `adb shell settings
+      put global always_finish_activities 1` (the standard technique) did not
+      actually destroy the Activity on this Samsung build while a foreground
+      service was active (same PID throughout, no destroy/create pair in
+      logcat) — so `SavedStateHandle`/back-stack restoration through a real
+      kill is still unverified. Did surface a real, evidenced finding along
+      the way: Samsung's "Freecess" background-app-freeze
+      (`FreecessHandler: freeze io.github.eladimany.spindle`, ~6s after
+      backgrounding) paused playback while backgrounded despite the correctly
+      declared foreground service — confirmed via `dumpsys media_session`
+      showing `state=PAUSED` at a position matching the freeze timestamp.
+      This is a device battery-optimization setting, not an app bug: the fix
+      is exempting Spindle from battery restrictions (Settings → Apps →
+      Spindle → Battery → Unrestricted), not a code change.
 - [ ] Accessibility: content descriptions, touch targets, TalkBack pass — icon
       buttons have `contentDescription`s but no dedicated pass has been done
 - [ ] Crash-free run through every screen on both devices — extensively

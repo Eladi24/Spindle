@@ -74,4 +74,6 @@ class PlaylistDetailViewModel @Inject constructor(
     fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)
 
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)
+
+    suspend fun exportM3u(): String = repository.exportM3u(playlistId)
 }

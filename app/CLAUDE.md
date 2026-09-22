@@ -320,6 +320,236 @@ regardless of any other theme code.
   felt). Needs `VIBRATE` in the manifest, unlike the permission-free
   `performHapticFeedback` route this replaced.
 
+### Phase 1 punch list — manual rescan, fast-scroll, M3U — 2026-09-22
+
+- **Manual rescan** — a refresh icon on the Manage Folders screen
+  (`FoldersScreen`'s TopAppBar), backed by `FoldersViewModel.rescanLibrary()`
+  and `isScanning`. Folded the folder-exclusion-toggle rescan and this one
+  into the same private `runRescan()` so both paths track `isScanning`
+  identically instead of the toggle path silently not reporting progress.
+- **Fast-scroll alphabet index on Tracks** — a draggable A-Z/# rail,
+  title-sort only (the anchors are positions into the title-ordered list, so
+  they don't line up under date-added/year sort — the rail hides itself
+  then). `TracksViewModel.sectionIndex` builds anchors off
+  `LibraryRepository.tracks` (already title-ordered, already reactive) rather
+  than adding a new query — same list backs "Shuffle All"'s ordering
+  assumptions elsewhere.
+  - Needed `enablePlaceholders = true` on the tracks `Pager` (was `false`) so
+    `LazyPagingItems` has a real `itemCount` to jump into and Paging 3 can
+    load pages around a distant target; added `jumpThreshold = 180` (3
+    pages) so a big scrub jump triggers a fresh load near the target instead
+    of paginating through every intervening page. The pre-existing
+    null-item branch in `TracksScreen` (`if (track != null) … else
+    CircularProgressIndicator()`) was dead code before this — placeholders
+    were off, so `tracks[index]` was never actually null — fixed its
+    `Modifier.fillMaxSize()` (would try to fill the remaining viewport
+    inside a `LazyColumn` item) to a fixed 76dp row matching `TrackRow`'s
+    real height, now that unloaded placeholder rows genuinely render.
+  - Gesture is one `awaitFirstDown()` + `drag()` in a single
+    `awaitEachGesture` block, not separate tap/drag detectors — a stationary
+    tap needs to jump immediately, which a plain `detectDragGestures` won't
+    do (it waits for touch-slop movement before firing `onDragStart`).
+  - Shows a large centered letter bubble while scrubbing, same idea as
+    Contacts-style fast scroll — pure UX feedback, not wired to anything else.
+- **M3U import/export for playlists** — export via SAF
+  `ActivityResultContracts.CreateDocument` from a playlist's TopAppBar
+  (`PlaylistRepository.exportM3u`); import via SAF `OpenDocument` from the
+  Playlists screen's TopAppBar, always creating a *new* playlist named after
+  the file (`PlaylistRepository.importM3u`).
+  - `Track` has no filesystem path (`core/model/Track.kt`'s `uri` is a
+    content URI — see CLAUDE.md's domain model note), so an exported row's
+    location line is the content URI, not a path. That round-trips exactly
+    on re-import into Spindle. The `#EXTINF:<durationSec>,<artist> - <title>`
+    line is there for everyone else — and doubles as this app's own import
+    fallback (`TrackDao.findByTitleLike`, preferring a matching artist) when
+    the URI doesn't resolve, e.g. a file written by another player or a
+    stale id after a rescan.
+  - `M3uFormat` (`data/playlists/M3uFormat.kt`) is pure parsing/formatting,
+    no Android imports — same "keep I/O at the edges" shape as the rest of
+    `data/`. `PlaylistsScreen`/`PlaylistDetailScreen` do the actual
+    `ContentResolver` reads/writes and hand `M3uFormat`/`PlaylistRepository`
+    plain strings.
+
+### Now Playing hero redesign — 2026-09-22
+
+First screen out of the "modern UI" concepts board (see the Deferred discussion
+entry below) — user picked this one to build first, from a mocked-up
+Artifact comparison.
+
+- Full-bleed dark violet gradient backdrop (`HeroBackdrop`) plus two blurred
+  color blobs (`Modifier.blur`), replacing the plain `MaterialTheme.colorScheme`
+  surface. **Deliberately not theme-conditional** — Now Playing keeps this
+  fixed dark identity regardless of the app's light/dark setting, same as
+  Spotify/Apple Music's player screen. All foreground colors on this screen
+  are therefore hardcoded white/lavender constants (`HeroOnBackdrop*`,
+  `HeroAccent`) rather than `MaterialTheme.colorScheme.*` — those flip with
+  system theme and would lose contrast against the fixed dark backdrop.
+- The backdrop gradient is a fixed approximation, not derived from the actual
+  album art color — real per-track extraction would need `androidx.palette`
+  (not in the stack, needs sign-off) run on the artwork bitmap already loaded
+  by `TrackArtwork`/Coil. Left as a possible follow-up.
+- Added `onBack` to `NowPlayingScreen` (wired to `popBackStack()` in
+  `AppNavHost`) — the screen had no way back before except the system
+  gesture; a hero screen this immersive needs an explicit control.
+- `CircleThumb`/`repeatIconFor` took explicit color params instead of reading
+  `MaterialTheme.colorScheme` directly, so this screen's fixed hero palette
+  and any future theme-following screen can both use them.
+
+### Tracks list restyle + app icon + splash screen — 2026-09-22
+
+- **Tracks list**, second screen from the UI refresh concepts board: "Shuffle
+  All" is now a flat tonal pill (`surfaceContainerHigh` + a hairline
+  `primary`-alpha border) instead of a filled gradient with a heavy drop
+  shadow — the gradient read as "cheap" per user feedback on the first
+  (lighter) mockup. Dropped the `HorizontalDivider()` between rows entirely;
+  `TrackRow`'s own rounded-card padding already separates rows, and a divider
+  under a card-style current-track row looked wrong. Scoped to `TracksScreen`
+  only for now — Album/Artist/Folder/Playlist detail and Search still use
+  `TrackRow` with dividers; same staged-rollout call as the shape/type pass.
+- **Animated equalizer glyph** on the current track's row
+  (`TrackRow`'s new `EqualizerGlyph`) — 3 bars, each its own out-of-phase
+  `rememberInfiniteTransition`, animated while `isPlaying`, frozen at a fixed
+  height when the current track is loaded but paused. `isCurrent` alone
+  already existed per-row; `isPlaying` is new
+  (`PlaybackController.isPlaying`, `TracksViewModel.isPlaying`) and is only
+  wired up in `TracksScreen` — other `TrackRow` call sites default it to
+  `false`, so their current row shows the static (not stale-animating) glyph
+  for free without extra wiring.
+- **App icon** — replaced the stock template's Android-robot adaptive icon.
+  `ic_launcher_background.xml` is now flat brand indigo (`#4B3FD1`);
+  `ic_launcher_foreground.xml` is the "Spindle Signal" mark (center pin +
+  three broadcast rings — same concept as the logo board's #1, scaled down
+  from its 100x100 sketch to fit the adaptive icon's ~66dp safe zone). Reused
+  as-is for the Android 13+ monochrome/themed-icon layer, since it's already
+  a pure white silhouette on transparent. The mipmap-*dpi `.webp` fallback
+  icons are stock and now stale, but **unreachable** — minSdk 26 means
+  `mipmap-anydpi-v26` always wins — so left alone rather than regenerated.
+- **Splash screen** — `ui/splash/SplashScreen.kt`, shown for a fixed 900ms in
+  `MainActivity` before the existing permission/scan/nav branching, not the
+  system `SplashScreen` API: that API is built for a single icon on a solid
+  color and actively discourages text, and the wordmark lockup the user
+  picked (logo concept #6) is icon-plus-text. Fixed brand-indigo background
+  regardless of theme, same reasoning as Now Playing's hero backdrop.
+  `ic_spindle_signal.xml` is a **second copy** of the launcher mark, cropped
+  tight instead of safe-zone-padded — rendering the launcher's own
+  `ic_launcher_foreground` directly here would show it small and off-center,
+  since that drawable assumes the OS's adaptive-icon crop/scale step. Keep
+  both in sync if the mark changes. No Poppins on Android (no font file to
+  bundle without a design-system asset source) — the wordmark uses the
+  existing bold system-font style from `ui/theme/Type.kt` instead; visually
+  close but not pixel-identical to the mockup.
+
+### Now Playing hero — centering and track-thickness fixes — 2026-09-22
+
+User feedback after installing on the A73: artwork looked off-center, and
+both sliders were fatter than the mockup.
+
+- **Centering bug**: the hero content `Column` (artwork + title/artist) had
+  `Modifier.weight(1f)` but no `.fillMaxWidth()`. A `Column` without an
+  explicit width only wraps to its widest child — here, the artwork at 72%
+  of screen width — so despite the Column's own `horizontalAlignment =
+  CenterHorizontally`, the whole (narrower-than-parent) block sat at the
+  *outer* Column's default `Alignment.Start`, reading as shifted left with
+  empty space on the right. Every sibling (top bar `Row`, controls `Row`,
+  `VolumeRow`) already had its own `fillMaxWidth()` so this only hit the one
+  weighted child. Fixed by adding `.fillMaxWidth()` alongside the `.weight(1f)`.
+- **Slider track thickness**: this Compose BOM's Material3 `Slider` default
+  track is the newer "expressive" ~16dp pill, not the thin line the mockup
+  showed. Added a custom `track = {}` slot (`ThinTrack`, 4dp, same pattern as
+  the existing custom `thumb = {}` slot) on both the seek and volume sliders
+  instead of trying to reconfigure the built-in one.
+
+### Rotation + process-death testing on the A73 — 2026-09-22
+
+Driven live over adb (device connected mid-session) rather than just reasoned
+about statically — see `docs/PHASE1.md` for the checklist state this left.
+
+- **Rotation**: forced landscape/portrait via `adb shell settings put system
+  user_rotation`. No crash either direction; playback (queue position,
+  current track) survived two Activity recreations with zero audible
+  interruption — confirmed both by screenshots and by `dumpsys media_session`
+  position advancing exactly with wall-clock time across the transition.
+- **Found via rotation**: Now Playing's artwork was sized with
+  `fillMaxWidth(0.72f).aspectRatio(1f)` — fine in portrait, but in landscape
+  "width" is the long edge, so the artwork blew up far past the screen and
+  overlapped the controls. Fixed with `BoxWithConstraints` sizing off
+  `minOf(maxWidth, maxHeight)` instead of width alone.
+- **Follow-on landscape rough edge, not fully fixed**: even after that, a
+  short landscape window doesn't have room for artwork *and* three lines of
+  title/artist/"track N of M" without one or the other shrinking a lot.
+  Current state: the hero content is wrapped in `verticalScroll` as a
+  correctness backstop (title/artist can no longer render *behind* the
+  slider, which is what a plain non-scrolling `Column` was doing — Compose
+  doesn't clip an overflowing child by default) — but in a short landscape
+  window that means the text sits below the fold and needs a manual scroll
+  to see, which isn't a good landscape experience. The real fix is a
+  landscape-specific layout (artwork left, text+controls right, like most
+  music apps do) rather than continuing to tune a single portrait-shaped
+  layout's size fractions — that's a design pass, not a bug fix, and hasn't
+  been done.
+- **Process-death**: attempted via `adb shell settings put global
+  always_finish_activities 1` (the standard technique for this). It did not
+  actually destroy `MainActivity` on this Samsung/Android build while
+  `PlaybackService` was an active foreground service — same PID before/after
+  backgrounding, no destroy/create pair in logcat — so this pass did not
+  actually exercise `SavedStateHandle`/back-stack restoration through a real
+  kill. Left `always_finish_activities` reset to `0` afterward.
+- **Found instead, unrelated to app code**: Samsung's "Freecess"
+  background-process-freeze mechanism (`FreecessHandler: freeze
+  io.github.eladimany.spindle`, firing ~6s after backgrounding) paused
+  playback during a plain Home-and-return cycle, confirmed authoritatively
+  via `dumpsys media_session` (`state=PAUSED` at a position matching the
+  freeze timestamp) rather than just the UI's play/pause icon. `
+  PlaybackService` is correctly declared as a foreground media-playback
+  service; this is Samsung's own aggressive battery management overriding
+  that, not a bug in `PlaybackController`/`PlaybackService`. No code fix
+  exists for this from the app side — the standard mitigation is the user
+  exempting the app from battery optimization (Settings → Apps → Spindle →
+  Battery → Unrestricted).
+
+### Lock screen controls fix — 2026-09-22
+
+User testing on the A73: the lock screen media widget had no skip/next
+button, and "previous" just restarted the current track instead of going
+back.
+
+- **Root cause**: `LocalOutput.play()` calls `player.setMediaItem(mediaItem)`
+  — one item at a time. `QueueManager`, not ExoPlayer's own `Timeline`, owns
+  next/previous. A raw `ExoPlayer` with a single-item timeline correctly
+  reports `hasNextMediaItem()/hasPreviousMediaItem() == false`, so every
+  system surface that reads `Player.availableCommands` (lock screen,
+  notification, Bluetooth AVRCP, Android Auto) hides the skip button, and
+  `Player.seekToPrevious()`'s own default fallback for "no previous item" is
+  to just seek to `0` on the current item — exactly the reported symptom.
+- **Fix has two parts, for two different real control paths** — found by
+  testing them separately, one didn't cover the other:
+  - `QueueAwareForwardingPlayer` (`PlaybackService.kt`), a `ForwardingPlayer`
+    wrapping the real `ExoPlayer`, given to `MediaSession.Builder` instead of
+    the raw player. Overrides `getAvailableCommands()` to always advertise
+    seek-to-next/previous, and routes `seekToNext()`/`seekToNextMediaItem()`/
+    `seekToPrevious()`/`seekToPreviousMediaItem()` to
+    `PlaybackController.next()/previous()`. This is the path a **tap on the
+    lock screen/notification widget's own buttons** takes (MediaController
+    transport-control calls, bridged by Media3 into Player command calls).
+  - `MediaSession.Callback.onMediaButtonEvent` (also `PlaybackService.kt`),
+    intercepting the raw `KeyEvent` for `KEYCODE_MEDIA_NEXT`/`_PREVIOUS`
+    directly and calling `PlaybackController` before Media3's default
+    key-to-player-command translation runs. This is the path a **physical
+    Bluetooth/wired headset button** takes — confirmed via `adb shell input
+    keyevent KEYCODE_MEDIA_PREVIOUS` that this path was *not* fixed by the
+    ForwardingPlayer overrides alone (still just restarted the track), before
+    this callback was added.
+  - Both intentionally always report/act as if next/previous are available,
+    same simplification as the in-app Now Playing screen's own prev/next
+    buttons (never disabled at queue boundaries either).
+- **Verified on-device**: `dumpsys media_session`'s actions bitmask gained
+  the `SKIP_TO_NEXT` bit (32) that was absent before; hardware media-key
+  simulation correctly walked a real 3-track span both directions
+  (Castellorizon → Children Of The Sea → Green Onions and back), confirmed
+  by the session's reported metadata changing tracks, not just position; a
+  screenshot of the actual lock screen widget now shows the skip button that
+  was previously reported missing entirely.
+
 ## Package layout (current)
 
 ```

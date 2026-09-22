@@ -16,12 +16,18 @@ import io.github.eladimany.spindle.data.library.toDomain
 import io.github.eladimany.spindle.playback.PlaybackController
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** Where letter [letter]'s tracks start in the title-sorted list — [index] is a position
+ * into [LibraryRepository.tracks], which is title-ordered regardless of the paging [sort]. */
+data class SectionAnchor(val letter: Char, val index: Int)
 
 @HiltViewModel
 class TracksViewModel @Inject constructor(
@@ -34,10 +40,31 @@ class TracksViewModel @Inject constructor(
     val sort: StateFlow<TrackSort> = _sort.asStateFlow()
 
     val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
+    val isPlaying: StateFlow<Boolean> = playbackController.isPlaying
 
+    // A-Z + '#' fast-scroll anchors. Only meaningful while sorted by title — the screen
+    // hides the index strip otherwise, since these positions won't line up with any other order.
+    val sectionIndex: StateFlow<List<SectionAnchor>> = libraryRepository.tracks
+        .map { tracks ->
+            val anchors = mutableListOf<SectionAnchor>()
+            var lastLetter: Char? = null
+            tracks.forEachIndexed { index, track ->
+                val first = track.title.firstOrNull()?.uppercaseChar()
+                val letter = if (first != null && first in 'A'..'Z') first else '#'
+                if (letter != lastLetter) {
+                    anchors += SectionAnchor(letter, index)
+                    lastLetter = letter
+                }
+            }
+            anchors
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    // Placeholders + a jump threshold let the paged list load pages around a fast-scroll
+    // target directly instead of paginating through everything in between.
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val tracks: Flow<PagingData<Track>> = _sort.flatMapLatest { sort ->
-        Pager(PagingConfig(pageSize = 60, enablePlaceholders = false)) {
+        Pager(PagingConfig(pageSize = 60, enablePlaceholders = true, jumpThreshold = 180)) {
             libraryRepository.tracksPagingSource(sort)
         }.flow.map { it.map { entity -> entity.toDomain() } }
     }.cachedIn(viewModelScope)
