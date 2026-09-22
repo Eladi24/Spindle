@@ -106,8 +106,8 @@ plays the search results as the queue.
 - [x] `PlaybackController` holding a `QueueManager` and one `AudioOutput`
 - [x] Unit tests for `QueueManager` — this is pure logic, test it properly
 
-**Check:** done — 14 tests, including shuffle+repeat-all wrap-around and
-repeat-one.
+**Check:** done — 15 tests, including shuffle+repeat-all wrap-around,
+repeat-one, and shuffle pinning the currently-playing track to position 0.
 
 ## 8. LocalOutput — mostly complete, some checks outstanding
 
@@ -144,20 +144,20 @@ untested (no headphones were plugged in during testing).
 just adds the UI and an app-side `StateFlow<Int>` to track the last-set level
 (neither `AudioOutput` nor the future Node have a way to report it back).
 
-## 10. Playlists — stub only, most of this is still open
+## 10. Playlists — core done, import/export still open
 
-- [x] Create, delete
-- [ ] Rename — not built
-- [ ] Add track / album / artist to playlist — not built (this is the big
-      missing piece; needs a hook somewhere like `TrackRow`'s context menu)
-- [ ] Reorder within a playlist — not built (`PlaylistDao.updatePositions`
-      exists, no UI)
+- [x] Create, delete, rename
+- [x] Add track / album / artist to playlist — long-press a track anywhere
+      (`TrackActionsSheet`) or use the playlist-icon in Album/Artist detail's
+      TopAppBar for the whole album/artist; both open `AddToPlaylistSheet`
+- [x] Reorder within a playlist — same drag-to-reorder pattern as QueueScreen
 - [ ] M3U import and export — not built
 
-## 11. Polish before Phase 2 — NOT STARTED
+## 11. Polish before Phase 2 — in progress
 
-- [ ] Dark theme and dynamic colour — using the stock template `Theme.kt`,
-      not reviewed/customised
+- [x] Custom color scheme — fixed indigo/violet Material 3 scheme replacing
+      the stock template's dynamic-color-only setup (see CLAUDE.md's "Color
+      scheme" section); dynamic color is still available but off by default
 - [ ] Rotation and process-death state restoration — untested
 - [ ] Accessibility: content descriptions, touch targets, TalkBack pass — icon
       buttons have `contentDescription`s but no dedicated pass has been done

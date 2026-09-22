@@ -112,7 +112,7 @@ built into the local-only path.
 - `QueueManager` owns shuffle/repeat/next/previous/move/remove. Shuffle
   permutes an index list over a stable backing list of `QueueItem`s, never the
   list itself, so disabling shuffle restores the exact original order. Fully
-  unit tested (`QueueManagerTest`, 14 cases) — no coroutines needed, it's
+  unit tested (`QueueManagerTest`, 15 cases) — no coroutines needed, it's
   synchronous.
 - `PlaybackController` holds the `QueueManager` and one active `AudioOutput`
   (injected via Hilt as the `AudioOutput` interface — it does not know it's
@@ -170,6 +170,77 @@ built into the local-only path.
   conditional swap per callback under-corrects and the drag quietly stalls
   partway there.
 
+### Playback and navigation fixes — 2026-09-22
+
+- **Mini-player was hidden on every detail screen.** `AppNavHost`'s bottom bar
+  was gated entirely on `currentRoute in Routes.topLevel` (the 5 bottom-tab
+  routes), so album/artist/folder/playlist detail and Search all lost it.
+  Split the condition: the mini-player now shows everywhere except
+  `NOW_PLAYING`/`QUEUE` (which already show full playback UI); the
+  `NavigationBar` itself stays top-level-only.
+- **`QueueManager.next()` replayed the last track instead of stopping.** At
+  the last position with repeat off, it fell into an `else -> currentItem`
+  branch — same bug whether you got there by shuffling or just playing
+  through a short queue. Now returns `null` there, same contract as
+  `onTrackEnded()`; `PlaybackController` stops output and clears the queue
+  when that happens, whether the queue ended naturally or via manual skip.
+- **"Shuffle All" could start on any track, including the last one.**
+  `TracksViewModel.shuffleAll()` played the sorted list's first track, *then*
+  shuffled — so the just-started track could land anywhere in the new order.
+  Added `QueueManager.setQueueShuffled()` / `PlaybackController
+  .playTracksShuffled()`, which shuffle before picking track 1.
+- **`QueueManager.addAll()` / `PlaybackController.addToQueue()`** — appends
+  tracks to the running queue without interrupting playback, for the new
+  long-press "Add to queue" action. Queue-slot ids there are
+  `"q<trackId>-<seq>"` (a monotonic counter), not the plain `"q<trackId>"`
+  used elsewhere — appending a track already in the queue would otherwise
+  collide on id, which shuffle/reorder/remove all key off of.
+- **Long-press on a track** (`TrackActionsSheet`, in `ui/components`) now
+  offers "Add to queue" or "Add to playlist" instead of jumping straight to
+  the playlist picker — used from Tracks, Album/Folder detail, Search, and
+  Playlist detail. Album/Artist detail's TopAppBar "add whole thing to
+  playlist" button is unchanged (still goes straight to `AddToPlaylistSheet`).
+- **Now Playing** has an "add to playlist" button (top row, next to Queue)
+  for the currently playing track.
+- **Mini-player swipe-to-skip**: horizontal drag on the mini-player (not Now
+  Playing) skips next/previous, via `Modifier.draggable` layered under the
+  existing tap-to-open-Now-Playing `clickable` — `draggable` only claims the
+  gesture past touch slop, so a plain tap still reaches the click handler
+  underneath it. Dedicated prev/next `IconButton`s were removed entirely once
+  this landed; play/pause moved to the trailing edge and got bigger (56dp
+  button, 32dp icon), same for the title/artist text (`titleMedium`/
+  `bodyMedium`, up from `bodyLarge`/`bodySmall`).
+  - Commits past **35dp** of drag, or on a fast flick (velocity ≥ 800dp/s)
+    even if it didn't travel the full distance — matches how swipe-to-skip
+    feels in other music apps, and was tuned down twice from an initial 64dp
+    after user feedback that it felt like "fighting" the gesture.
+  - The title/artist crossfades with the drag: current fades out and slides
+    with the finger (clamped to the threshold distance) while the
+    next/previous track's title fades in from the edge, reaching full
+    opacity exactly at the commit threshold — so the fade is always complete
+    by the time the skip actually happens, never a jump-cut. A fling-commit
+    with a short drag distance plays a quick 120ms tween to finish that
+    slide before committing, for the same reason.
+  - Dragging toward an end with nothing to skip to (no next/previous track)
+    gets rubber-band resistance (25% of the delta) rather than a hard stop.
+  - `AppNavHost` computes the previewed next/previous `Track` from
+    `queueState` (wrapping on `RepeatMode.ALL`, else null past either end)
+    and passes it down — the mini-player itself has no queue logic.
+
+### Shuffle now keeps the playing track first, not wherever it lands — 2026-09-22
+
+`QueueManager.setShuffled(true)` used to shuffle *all* indices including the
+currently-playing one, then search for wherever it ended up — so toggling
+shuffle mid-playback could put the track you're already listening to third,
+last, anywhere. Fixed: the current track is pulled out first and pinned to
+position 0; only the *rest* of the queue is shuffled behind it. Toggling
+shuffle off is unchanged — restores original order, finds the current
+track's position in it. ("Shuffle All" from the Tracks tab was already
+correct — see `QueueManager.setQueueShuffled()` above — since there's no
+"currently playing" track to preserve when starting a shuffle from scratch.)
+Covered by `QueueManagerTest`'s new case asserting `currentIndex == 0` and
+`queue.first()` after shuffling on.
+
 ### Visual design — 2026-09-22 pass
 
 User feedback: the stock-template look ("ancient and square") needed a
@@ -203,6 +274,51 @@ API 31+ — nothing to add there) plus Material 3 "expressive" shapes.
   (single derivation of "what's loaded right now" from `playbackState`,
   shared by every screen instead of each one re-deriving it) and wiring it
   through each screen's ViewModel.
+
+### Color scheme — 2026-09-22, replaced dynamic color
+
+User feedback: still looked "old and grey" after the shape/type pass above.
+Root cause: `dynamicColor = true` pulls the whole palette from the device
+wallpaper (Material You) — on a neutral wallpaper the app desaturates to grey
+regardless of any other theme code.
+
+- `dynamicColor` now defaults to **false**. `Color.kt`/`Theme.kt` define a
+  full hand-authored Material 3 scheme (every role — not just
+  primary/secondary/tertiary — since `lightColorScheme()`/`darkColorScheme()`
+  default any omitted role to Material3's own baseline purple, not something
+  derived from the roles you do pass; a partial override reads as a
+  mismatched patchwork).
+- Identity: deep indigo/violet (`primary` #4B3FD1 light / #C3BFFF dark) — one
+  swappable place (`Color.kt`) if this isn't to taste.
+- The dynamic-color code path is still there (`dynamicColor: Boolean`
+  parameter on `SpindleTheme`), just off by default, in case Material You is
+  wanted back later.
+
+### Now Playing sliders — 2026-09-22
+
+- **Circular thumb** on both the seek and volume `Slider`s, via the `thumb =`
+  slot — Material3's default thumb is a thin vertical bar, which read as
+  fiddly to grab. Custom `CircleThumb` composable, shared by both.
+- **Play/pause is a `FilledIconButton`** now (72dp, `shape = CircleShape`),
+  not a bare `IconButton` — bigger tap target, and a filled primary-color
+  circle instead of just a glyph.
+- **Volume slider felt stiff/steppy while dragging.** `STREAM_MUSIC` only has
+  ~15 real steps on most phones; feeding the rounded system readback straight
+  back into the slider's `value` made it visibly snap between those steps
+  mid-drag. Fixed with the same pattern the seek bar already used: a local
+  `displayVolume` float tracks the drag smoothly, and only gets overwritten
+  by the real (coarse) system value when the user isn't actively dragging.
+- **Haptic ticks while dragging** either slider (`rememberHapticTicker`) —
+  fires once per crossing of one of 30 evenly-spaced buckets across the
+  slider's range, not once per raw value change, which would buzz
+  continuously instead of ticking. Drives `Vibrator.vibrate(VibrationEffect
+  .createOneShot(15, 130))` directly rather than Compose's semantic
+  `HapticFeedbackType.SegmentTick` — confirmed on-device (A73, Android 16)
+  that constant renders as too weak to feel at all, even with the global
+  haptic-feedback setting on and the vibrator motor itself confirmed working
+  (`adb shell cmd vibrator_manager synced oneshot -a 300 200` was clearly
+  felt). Needs `VIBRATE` in the manifest, unlike the permission-free
+  `performHapticFeedback` route this replaced.
 
 ## Package layout (current)
 
