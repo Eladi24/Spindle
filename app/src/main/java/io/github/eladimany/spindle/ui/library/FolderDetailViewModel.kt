@@ -33,6 +33,8 @@ class FolderDetailViewModel @Inject constructor(
     val tracks: StateFlow<List<Track>> = libraryRepository.tracksForFolder(folderId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
+
     init {
         viewModelScope.launch {
             _folder.value = libraryRepository.folderById(folderId)

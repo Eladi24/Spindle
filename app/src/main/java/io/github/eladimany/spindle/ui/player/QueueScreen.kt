@@ -2,7 +2,6 @@ package io.github.eladimany.spindle.ui.player
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Box
@@ -16,15 +15,16 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -73,7 +73,7 @@ fun QueueScreen(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text("Queue") },
+                title = { Text(if (displayItems.isEmpty()) "Queue" else "Queue (${displayItems.size})") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -102,7 +102,7 @@ fun QueueScreen(
         ) {
             itemsIndexed(displayItems, key = { _, item -> item.id }) { _, item ->
                 val isDragging = item.id == draggingId
-                Column(
+                Box(
                     // Always call animateItem() — never toggle between it and a plain
                     // Modifier. Swapping modifier *chains* (rather than just a param)
                     // on an ancestor mid-gesture tears down and recreates the child's
@@ -174,7 +174,6 @@ fun QueueScreen(
                             dragDeltaY = 0f
                         },
                     )
-                    HorizontalDivider()
                 }
             }
         }
@@ -194,75 +193,78 @@ private fun QueueRow(
     onDrag: (Float) -> Unit,
     onDragEnd: () -> Unit,
 ) {
-    Row(
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 4.dp)
             .graphicsLayer { translationY = dragOffsetY }
             .zIndex(if (isDragging) 1f else 0f)
             // Lifted look while actively dragging — a real elevation shadow plus a
             // slight scale-up, so grabbing a row is unmistakable even mid-gesture,
             // not just a color tweak that's easy to miss out of the corner of an eye.
             .scale(if (isDragging) 1.02f else 1f)
-            .shadow(elevation = if (isDragging) 6.dp else 0.dp)
-            .background(
-                when {
-                    isDragging -> MaterialTheme.colorScheme.primaryContainer
-                    isCurrent -> MaterialTheme.colorScheme.surfaceVariant
-                    else -> MaterialTheme.colorScheme.background
-                },
-            )
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .shadow(elevation = if (isDragging) 6.dp else 0.dp, shape = RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        color = if (isDragging) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        // Tonal elevation for "currently playing" instead of a flat gray swap.
+        tonalElevation = if (isCurrent && !isDragging) 6.dp else 0.dp,
     ) {
-        // Only this part is clickable (jump to track) — the ripple stays confined
-        // to here instead of covering the delete/drag icons too.
         Row(
             modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onClick),
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TrackArtwork(
-                track = item.track,
-                fetchArtworkUri = fetchArtworkUri,
-                modifier = Modifier.size(44.dp),
-            )
-            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(
-                    item.track.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+            // Only this part is clickable (jump to track) — the ripple stays confined
+            // to here instead of covering the delete/drag icons too.
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onClick),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TrackArtwork(
+                    track = item.track,
+                    fetchArtworkUri = fetchArtworkUri,
+                    modifier = Modifier.size(52.dp),
                 )
-                Text(item.track.artistName, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-            }
-        }
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Default.Delete, contentDescription = "Remove from queue")
-        }
-        // 48dp is Material's minimum touch target — the icon itself is only 24dp,
-        // too small to reliably long-press-and-drag with a real finger.
-        Box(
-            modifier = Modifier
-                .size(48.dp)
-                .pointerInput(item.id) {
-                    detectDragGesturesAfterLongPress(
-                        onDragStart = { onDragStart() },
-                        onDrag = { change, dragAmount ->
-                            change.consume()
-                            onDrag(dragAmount.y)
-                        },
-                        onDragEnd = { onDragEnd() },
-                        onDragCancel = { onDragEnd() },
+                Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(
+                        item.track.title,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
                     )
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Default.DragHandle,
-                contentDescription = "Drag to reorder",
-                tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+                    Text(item.track.artistName, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                }
+            }
+            IconButton(onClick = onRemove) {
+                Icon(Icons.Default.Delete, contentDescription = "Remove from queue")
+            }
+            // 48dp is Material's minimum touch target — the icon itself is only 24dp,
+            // too small to reliably long-press-and-drag with a real finger.
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .pointerInput(item.id) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { onDragStart() },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                onDrag(dragAmount.y)
+                            },
+                            onDragEnd = { onDragEnd() },
+                            onDragCancel = { onDragEnd() },
+                        )
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.DragHandle,
+                    contentDescription = "Drag to reorder",
+                    tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }

@@ -102,7 +102,7 @@ fun NowPlayingScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f),
-            cornerRadiusDp = 16,
+            cornerRadiusDp = 24,
         )
 
         Column {
@@ -111,6 +111,13 @@ fun NowPlayingScreen(
                 "${item.track.artistName} — ${item.track.albumName}",
                 style = MaterialTheme.typography.bodyMedium,
             )
+            if (queueState.items.isNotEmpty() && queueState.currentIndex >= 0) {
+                Text(
+                    "Track ${queueState.currentIndex + 1} of ${queueState.items.size}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         Column {

@@ -53,6 +53,7 @@ fun SpindleTheme(
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
+        shapes = SpindleShapes,
         content = content
     )
 }

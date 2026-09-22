@@ -24,6 +24,7 @@ fun PlaylistDetailScreen(
 ) {
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
+    val currentTrackId by viewModel.currentTrackId.collectAsStateWithLifecycle()
 
     Scaffold(
         modifier = modifier,
@@ -41,7 +42,7 @@ fun PlaylistDetailScreen(
                 items(tracks, key = { it.id }) { track ->
                     TrackRow(
                         track = track,
-                        isCurrent = false,
+                        isCurrent = track.id == currentTrackId,
                         onClick = { viewModel.playTrack(track) },
                         fetchArtworkUri = viewModel::artworkUriFor,
                     )

@@ -33,6 +33,8 @@ class PlaylistDetailViewModel @Inject constructor(
     val tracks: StateFlow<List<Track>> = repository.tracksFor(playlistId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
+
     init {
         viewModelScope.launch { _playlist.value = repository.getById(playlistId) }
     }

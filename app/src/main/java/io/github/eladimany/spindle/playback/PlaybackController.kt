@@ -11,8 +11,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -38,6 +41,21 @@ class PlaybackController @Inject constructor(
     private var serviceStarted = false
 
     val playbackState: StateFlow<PlaybackState> = output.state
+
+    // Single source of truth for "is this track the one currently loaded" — every
+    // list screen (Tracks, Album/Folder/Playlist detail) needs this to highlight the
+    // current row; deriving it once here instead of per-ViewModel avoids the class
+    // of bug where a screen just hardcodes isCurrent = false and nobody notices.
+    val currentTrackId: StateFlow<Long?> = playbackState
+        .map { state ->
+            when (state) {
+                is PlaybackState.Playing -> state.item.track.id
+                is PlaybackState.Paused -> state.item.track.id
+                is PlaybackState.Buffering -> state.item.track.id
+                else -> null
+            }
+        }
+        .stateIn(scope, SharingStarted.Eagerly, null)
 
     private val _queueState = MutableStateFlow(QueueState())
     val queueState: StateFlow<QueueState> = _queueState.asStateFlow()

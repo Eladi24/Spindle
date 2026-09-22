@@ -170,6 +170,40 @@ built into the local-only path.
   conditional swap per callback under-corrects and the drag quietly stalls
   partway there.
 
+### Visual design — 2026-09-22 pass
+
+User feedback: the stock-template look ("ancient and square") needed a
+refresh. Direction chosen: Material You dynamic color (already wired in
+`Theme.kt` since the project template, `dynamicColor = true` by default on
+API 31+ — nothing to add there) plus Material 3 "expressive" shapes.
+
+- `ui/theme/Shape.kt`: a custom `Shapes()` bumped up from Material3's
+  defaults (4/8/12/16/28dp → 8/12/16/20/28dp), passed into `MaterialTheme`.
+  Affects every component reading `MaterialTheme.shapes.*` automatically.
+- `ui/theme/Type.kt`: bolder weights on the styles actually used for
+  titles/row text (`headlineSmall`, `titleLarge` → Bold; `titleMedium` →
+  SemiBold; `bodyLarge` → Medium) instead of Material3's default Normal.
+- `TrackArtwork`/`AlbumArtwork` default corner radius 8dp → 12dp; bigger
+  artwork in `TrackRow` (48→56dp), `QueueRow` (44→52dp), `MiniPlayerBar`
+  (40→48dp), Now Playing (16→24dp corner radius).
+- **Tonal elevation instead of a flat background-color swap for
+  "currently playing"/"currently dragging" rows** (`TrackRow`, `QueueRow`)
+  — wrapped in a `Surface` with `tonalElevation` and a rounded, inset shape
+  rather than an edge-to-edge `Modifier.background()` rectangle. This reads
+  as a raised card, which was the specific "flat gray panel" complaint.
+- Artists/Albums/Folders/Playlists list screens were **not** touched in this
+  pass beyond the global shape/type changes — they're plain text or
+  artwork-grid rows with no "current" state to elevate. A further pass here
+  is possible later but wasn't judged worth the scope right now.
+- **Found and fixed while wiring the new "currently playing" card style**:
+  `TracksScreen`, `AlbumDetailScreen`, `FolderDetailScreen`, and
+  `PlaylistDetailScreen` all hardcoded `TrackRow(isCurrent = false, ...)` —
+  the current-track highlight had never actually worked outside the Queue
+  screen. Fixed by adding `PlaybackController.currentTrackId: StateFlow<Long?>`
+  (single derivation of "what's loaded right now" from `playbackState`,
+  shared by every screen instead of each one re-deriving it) and wiring it
+  through each screen's ViewModel.
+
 ## Package layout (current)
 
 ```
@@ -258,14 +292,23 @@ Work phase by phase; `docs/PHASE1.md` is the current task list. Finish and verif
 one task before starting the next. Ask before adding a dependency that is not in
 the stack list above.
 
+Watch the conversation's context budget. If a session has been running long
+(many rounds of edit/build/adb-test cycles, large file reads, long back-and-forth),
+proactively tell the user it's getting full and this is a good point to wrap up —
+don't wait for things to visibly degrade first. Raised 2026-09-22.
+
 ## Deferred discussion — once local playback is robust and the user is satisfied
 
 Raised 2026-09-22, deliberately not acted on yet:
 
-- **Revisit the shuffle feature.** Current behavior: "Shuffle All" (Tracks tab)
-  and the shuffle toggle (Now Playing) both call `QueueManager.setShuffled`,
-  which Fisher-Yates permutes an index list once and keeps that order until
-  toggled off. The user wants to discuss this further once the player feels
-  solid — don't assume the current behavior is final.
+- **Revisit the shuffle feature — "smart shuffle."** Current behavior: "Shuffle
+  All" (Tracks tab) and the shuffle toggle (Now Playing) both call
+  `QueueManager.setShuffled`, which Fisher-Yates permutes an index list once
+  and keeps that order until toggled off — this already guarantees each track
+  appears exactly once per shuffle pass (confirmed 2026-09-22: `order` is a
+  permutation of `items.indices`, never resampled with replacement). The user
+  wants to design a "smart shuffle" feature on top of this later — not scoped
+  at all yet, raise it with the user before doing any design or implementation
+  work on it.
 - **AI-generated playlists** — a possible future feature. Not scoped at all;
   raise it with the user before doing any design or implementation work on it.

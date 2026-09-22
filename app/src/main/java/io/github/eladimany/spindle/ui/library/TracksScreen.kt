@@ -43,6 +43,7 @@ fun TracksScreen(
 ) {
     val tracks = viewModel.tracks.collectAsLazyPagingItems()
     val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val currentTrackId by viewModel.currentTrackId.collectAsStateWithLifecycle()
     var showSortMenu by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -89,7 +90,7 @@ fun TracksScreen(
                 if (track != null) {
                     TrackRow(
                         track = track,
-                        isCurrent = false,
+                        isCurrent = track.id == currentTrackId,
                         onClick = { viewModel.playTrack(track) },
                         fetchArtworkUri = viewModel::artworkUriFor,
                     )

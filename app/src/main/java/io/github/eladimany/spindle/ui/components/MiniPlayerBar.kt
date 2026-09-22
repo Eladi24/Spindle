@@ -52,7 +52,7 @@ fun MiniPlayerBar(
             TrackArtwork(
                 track = item.track,
                 fetchArtworkUri = fetchArtworkUri,
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier.size(48.dp),
             )
             Column(modifier = Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(item.track.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1)

@@ -29,7 +29,7 @@ fun TrackArtwork(
     track: Track,
     fetchArtworkUri: suspend (Track) -> String?,
     modifier: Modifier = Modifier,
-    cornerRadiusDp: Int = 8,
+    cornerRadiusDp: Int = 12,
 ) {
     ArtworkBox(
         key = track.albumId,
@@ -44,7 +44,7 @@ fun AlbumArtwork(
     album: Album,
     fetchArtworkUri: suspend (Album) -> String?,
     modifier: Modifier = Modifier,
-    cornerRadiusDp: Int = 8,
+    cornerRadiusDp: Int = 12,
 ) {
     ArtworkBox(
         key = album.id,

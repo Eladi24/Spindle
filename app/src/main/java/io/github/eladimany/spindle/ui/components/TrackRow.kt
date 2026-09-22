@@ -6,11 +6,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import io.github.eladimany.spindle.core.model.Track
 
@@ -22,25 +25,36 @@ fun TrackRow(
     fetchArtworkUri: suspend (Track) -> String?,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(16.dp)),
+        // Tonal elevation instead of a flat gray swap — the current-track row
+        // reads as a raised card rather than a same-shape-different-color panel.
+        tonalElevation = if (isCurrent) 6.dp else 0.dp,
+        shape = RoundedCornerShape(16.dp),
     ) {
-        TrackArtwork(
-            track = track,
-            fetchArtworkUri = fetchArtworkUri,
-            modifier = Modifier.size(48.dp),
-        )
-        Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-            Text(
-                text = track.title,
-                style = MaterialTheme.typography.bodyLarge,
-                color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            TrackArtwork(
+                track = track,
+                fetchArtworkUri = fetchArtworkUri,
+                modifier = Modifier.size(56.dp),
             )
-            Text(track.artistName, style = MaterialTheme.typography.bodySmall)
+            Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
+                Text(
+                    text = track.title,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                )
+                Text(track.artistName, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }

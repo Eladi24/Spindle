@@ -33,6 +33,8 @@ class AlbumDetailViewModel @Inject constructor(
     val tracks: StateFlow<List<Track>> = libraryRepository.tracksForAlbum(albumId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
+
     init {
         viewModelScope.launch {
             _album.value = libraryRepository.albumById(albumId)

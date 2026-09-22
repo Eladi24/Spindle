@@ -16,7 +16,6 @@ import io.github.eladimany.spindle.data.library.toDomain
 import io.github.eladimany.spindle.playback.PlaybackController
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -33,6 +32,8 @@ class TracksViewModel @Inject constructor(
 
     private val _sort = MutableStateFlow(TrackSort.TITLE)
     val sort: StateFlow<TrackSort> = _sort.asStateFlow()
+
+    val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val tracks: Flow<PagingData<Track>> = _sort.flatMapLatest { sort ->
