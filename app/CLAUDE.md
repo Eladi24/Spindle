@@ -566,9 +566,11 @@ io/github/eladimany/spindle/
 │   ├── prefs/               SettingsRepository (DataStore — folder exclusions)
 │   ├── server/              MediaHttpServer, TokenRegistry, HttpRange,
 │   │                        NetworkAddress (Phase 2, see below)
-│   └── bluos/               BluOsClient, BluOsXmlParser, BluOsStatus,
-│                            BluOsDiscovery, NodeTrackEnd, IcyName
-│                            (Phase 2, see below)
+│   ├── bluos/               BluOsClient, BluOsXmlParser, BluOsStatus,
+│   │                        BluOsSyncStatus, BluOsDiscovery, NodeTrackEnd,
+│   │                        IcyName (Phase 2, see below)
+│   └── artists/             ArtistArtworkRepository, DeezerArtistArtworkClient,
+│                            DeezerArtistArt (see "Artist artwork" below)
 ├── playback/                AudioOutput, MediaSource, LocalOutput, NodeOutput,
 │                            AudioOutputSwitcher, LocalAudioRoutes, QueueManager,
 │                            PlaybackController, PlaybackService
@@ -893,6 +895,109 @@ local device* "This phone" actually plays through — so it doesn't touch
   `AudioDeviceCallback` on `LocalOutput` itself (separate registration from
   `LocalAudioRoutes`' own — different concerns, no need to couple them) that
   re-reads `currentSystemVolumePercent()` on every device add/remove.
+
+### Node output — first real-hardware run — 2026-09-22
+
+Streamed to the actual Bluesound Node for the first time. Surfaced two real
+bugs and closed the one deliberately-deferred piece:
+
+- **Switching outputs mid-track jumped back to a stale position** (reported:
+  sometimes to where it was on the previous output, sometimes to the very
+  start). `AudioOutputSwitcher.switchTo()` read `PlaybackState.Playing
+  .positionMs` bare — but that field is a *snapshot* as of `capturedAtMs`
+  (see the type's own doc comment), never updated except on a real state
+  change, not every second. Neither output emits a new `Playing` state while
+  just steadily playing, so by the time you switched minutes in, the
+  snapshot was from whenever playback last actually changed state. Fixed by
+  interpolating the same way the seek bar does:
+  `positionMs + (now - capturedAtMs)`, clamped to duration, before handing
+  it to the new output's `seek()`.
+- **`/SyncStatus` implemented for real** — deferred in the earlier
+  `BluOsClient` entry specifically until it could be verified; a real
+  response, captured against a Node (model `N132`/`NODE`, firmware
+  4.16.22):
+  ```xml
+  <SyncStatus etag="66" syncStat="66" version="4.16.22" id="10.0.0.9:11000" db="0"
+    volume="100" name="Living Room HI-Fi" model="N132" modelName="NODE"
+    class="streamer" icon="/images/players/N125_nt.png" brand="Bluesound"
+    schemaVersion="34" initialized="true" mac="90:56:82:98:B4:42">
+    <pairWithSub/> <bluetoothOutput/>
+  </SyncStatus>
+  ```
+  Unlike `/Status`, every field is a **root-element attribute**, not a child
+  element — confirms it needed its own verified parser rather than reusing
+  `/Status`'s shape. Only `etag`/`volume`/`name` are modeled in
+  `BluOsSyncStatus`; the rest (`model`, `mac`, `pairWithSub` grouping, ...)
+  exist in the real response but aren't consumed yet. `NodeOutput` runs this
+  as a second, independent long-poll loop (`syncStatusLoop`, its own etag
+  chain) started from `connect()` rather than lazily from `play()` like the
+  `/Status` loop — volume matters even before anything's loaded.
+- **Quality/bit-perfect passthrough** — by design, not yet independently
+  verified. `MediaHttpServer` streams the original file bytes untouched; no
+  transcoding happens anywhere in this app's path, so Bluetooth-style
+  lossy-codec concerns don't apply (BluOS is a WiFi network player, not a
+  Bluetooth one). `BluOsStatus.quality`/`streamFormat` already exist in the
+  parsed data but aren't surfaced in the UI yet — the check for now is the
+  official BluOS Controller app's own now-playing view, same as `docs/PLAN.md`
+  §Phase 2 already calls for ("verify a 24/192 FLAC reports as hi-res").
+
+## Artist artwork — Deezer, opt-in per artist — 2026-09-22
+
+User wanted the Artists screen to show a band/artist photo. Explicit design
+constraint from the user: **no automatic scan, ever** — every fetch is a
+deliberate per-artist tap, never a one-time background pass, since it means
+sending library artist names to a third-party service.
+
+- **`ArtistArtworkEntity`/`ArtistArtworkDao` are a separate Room table, not
+  a column on `ArtistEntity`.** `MediaStoreScanner` upserts a fresh
+  `ArtistEntity` for every artist on every rescan (manual or
+  `ContentObserver`-triggered) — a column living on that row would get
+  silently wiped back to null on the next scan. The separate table is never
+  touched by a scan, and Room's Paging invalidation still picks up writes to
+  it automatically (a `LazyPagingItems` re-diffs when the underlying tables
+  it was built from change — here that's `artist_artwork`, joined at the UI
+  layer via a `Map<Long, String>` from `ArtistArtworkRepository
+  .artworkByArtistId`, not in the `PagingSource` query itself). Schema
+  bumped to v4; destructive migration (existing policy, see `docs/PLAN.md`
+  §7 / the `DatabaseModule` comment) — a clean rescan, not a real migration.
+- **`DeezerArtistArtworkClient`** — Deezer's public `/search/artist`, no API
+  key required for this endpoint. **`DeezerArtistArt`** is the pure
+  JSON-parsing half, pulled out specifically so it's unit tested
+  (`DeezerArtistArtTest`) without needing a live network call — same
+  reasoning as `HttpRange`/`BluOsXmlParser`. Needed `testImplementation(libs
+  .json)` (the real `org.json` jar): Android's own `org.json` classes are
+  stubbed to throw `"Stub!"` on the plain-JVM unit-test classpath, only the
+  real device/emulator runtime has a working implementation.
+- **Found on-device: remote images loaded nothing, silently, no error.**
+  Coil 3 splits network image loading into a separate artifact from
+  `coil-compose` — without `coil-network-ktor3`, `AsyncImage` has no
+  `Fetcher` for `http(s)://` models at all, so it fails silently rather than
+  showing a broken-image state (worth remembering — this project's other
+  artwork, `TrackArtwork`/`AlbumArtwork`, only ever loads local `content://`
+  URIs, so this gap was invisible until a *remote* URL was tried for the
+  first time). Added at the exact same pinned version as `coil-compose`
+  (3.3.0) — see CLAUDE.md's "Version pins" section for why that pin exists
+  and matters. Confirmed working on the A73 after adding it.
+- **UI**: `ArtistRow`'s circular avatar is the one and only fetch trigger —
+  a dashed-outline "+" placeholder when there's no artwork yet, a spinner
+  while `ArtistsViewModel.fetchingIds` contains that artist's id, the real
+  photo once `artworkByArtistId` has an entry for it. No separate button,
+  no badge — picked over a global "fetch all" banner in the mockup
+  comparison specifically so every single fetch stays an individual,
+  visible, undo-free user action.
+
+## Bottom nav bar — translucent, but only partway — 2026-09-22
+
+`NavigationBar`'s `containerColor` is now `surfaceContainer` at 85% alpha,
+for visual interest against the system nav/gesture area on edge-to-edge
+devices. **Deliberately not the full "content scrolls visibly behind a
+see-through bar" effect** shown in the mockup comparison — that needs every
+top-level screen's list to stop respecting the outer `Scaffold`'s bottom
+inset and instead take a matching `contentPadding` so the last item stays
+reachable, which is a real structural change touching all 5 top-level
+screens (Tracks/Artists/Albums/Folders/Playlists), not a color tweak. Raised
+with the user as a bigger follow-up rather than done as part of this ask;
+not started.
 
 ## Library scanning — folder exclusion (not in the original plan, now permanent)
 
