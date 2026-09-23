@@ -22,6 +22,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -32,10 +36,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +57,7 @@ import io.github.eladimany.spindle.core.model.TrackSort
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
+import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 import kotlinx.coroutines.launch
 
 @Composable
@@ -74,6 +75,7 @@ fun TracksScreen(
     var actionsTarget by remember { mutableStateOf<List<Track>?>(null) }
     var scrubLetter by remember { mutableStateOf<Char?>(null) }
     val listState = rememberLazyListState()
+    val tapGuard = rememberScrollTapGuard(listState)
     val scope = rememberCoroutineScope()
     // The list has a "Shuffle All" header before the tracks, so a section's position
     // in the title-ordered library is one behind its row index in this LazyColumn.
@@ -123,7 +125,7 @@ fun TracksScreen(
                 contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
             ) {
                 item {
-                    ShuffleAllRow(onClick = viewModel::shuffleAll)
+                    ShuffleAllRow(onClick = tapGuard.guard(viewModel::shuffleAll))
                 }
                 items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
                     val track = tracks[index]
@@ -132,7 +134,7 @@ fun TracksScreen(
                             track = track,
                             isCurrent = track.id == currentTrackId,
                             isPlaying = isPlaying && track.id == currentTrackId,
-                            onClick = { viewModel.playTrack(track) },
+                            onClick = tapGuard.guard { viewModel.playTrack(track) },
                             onLongClick = { actionsTarget = listOf(track) },
                             fetchArtworkUri = viewModel::artworkUriFor,
                         )

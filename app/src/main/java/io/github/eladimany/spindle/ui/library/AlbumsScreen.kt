@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -26,6 +27,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import io.github.eladimany.spindle.ui.components.AlbumArtwork
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 
 @Composable
 fun AlbumsScreen(
@@ -35,6 +37,8 @@ fun AlbumsScreen(
     viewModel: AlbumsViewModel = hiltViewModel(),
 ) {
     val albums = viewModel.albums.collectAsLazyPagingItems()
+    val gridState = rememberLazyGridState()
+    val tapGuard = rememberScrollTapGuard(gridState)
 
     Scaffold(
         modifier = modifier,
@@ -51,6 +55,7 @@ fun AlbumsScreen(
     ) { innerPadding ->
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 140.dp),
+            state = gridState,
             modifier = Modifier.padding(innerPadding).fillMaxSize(),
             contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 8.dp + LocalBottomOverlayPadding.current),
         ) {
@@ -60,7 +65,7 @@ fun AlbumsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)
-                        .clickable { onAlbumClick(album.id) },
+                        .clickable(onClick = tapGuard.guard { onAlbumClick(album.id) }),
                 ) {
                     AlbumArtwork(
                         album = album,

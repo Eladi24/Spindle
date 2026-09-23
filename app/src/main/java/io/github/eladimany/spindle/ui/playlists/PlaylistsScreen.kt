@@ -4,6 +4,7 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -45,6 +46,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Playlist
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 
 @Composable
 fun PlaylistsScreen(
@@ -54,6 +56,8 @@ fun PlaylistsScreen(
     viewModel: PlaylistsViewModel = hiltViewModel(),
 ) {
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    val tapGuard = rememberScrollTapGuard(listState)
     var showCreateDialog by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Playlist?>(null) }
     val context = LocalContext.current
@@ -105,6 +109,7 @@ fun PlaylistsScreen(
             )
         } else {
             LazyColumn(
+                state = listState,
                 modifier = Modifier.padding(innerPadding).fillMaxSize(),
                 contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
             ) {
@@ -112,7 +117,7 @@ fun PlaylistsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { onPlaylistClick(playlist.id) }
+                            .clickable(onClick = tapGuard.guard { onPlaylistClick(playlist.id) })
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

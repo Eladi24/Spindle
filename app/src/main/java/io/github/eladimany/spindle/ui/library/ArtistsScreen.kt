@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -38,6 +39,7 @@ import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import io.github.eladimany.spindle.core.model.Artist
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 
 @Composable
 fun ArtistsScreen(
@@ -49,6 +51,8 @@ fun ArtistsScreen(
     val artists = viewModel.artists.collectAsLazyPagingItems()
     val artworkByArtistId by viewModel.artworkByArtistId.collectAsStateWithLifecycle()
     val fetchingIds by viewModel.fetchingIds.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    val tapGuard = rememberScrollTapGuard(listState)
 
     Scaffold(
         modifier = modifier,
@@ -64,6 +68,7 @@ fun ArtistsScreen(
         },
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.padding(innerPadding).fillMaxSize(),
             contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
         ) {
@@ -73,8 +78,9 @@ fun ArtistsScreen(
                     artist = artist,
                     imageUrl = artworkByArtistId[artist.id],
                     isFetching = artist.id in fetchingIds,
-                    onClick = { onArtistClick(artist.id) },
-                    onFetchArtwork = { viewModel.fetchArtwork(artist) },
+                    onClick = tapGuard.guard { onArtistClick(artist.id) },
+                    // Guarded too: a stray tap here would send the artist's name to Deezer.
+                    onFetchArtwork = tapGuard.guard { viewModel.fetchArtwork(artist) },
                 )
             }
         }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 
 @Composable
 fun FolderBrowseScreen(
@@ -35,6 +37,8 @@ fun FolderBrowseScreen(
     viewModel: FolderBrowseViewModel = hiltViewModel(),
 ) {
     val folders by viewModel.folders.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    val tapGuard = rememberScrollTapGuard(listState)
 
     Scaffold(
         modifier = modifier,
@@ -53,6 +57,7 @@ fun FolderBrowseScreen(
         },
     ) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.padding(innerPadding).fillMaxSize(),
             contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
         ) {
@@ -60,7 +65,7 @@ fun FolderBrowseScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable { onFolderClick(folder.id) }
+                        .clickable(onClick = tapGuard.guard { onFolderClick(folder.id) })
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
                     Text(folder.name, style = MaterialTheme.typography.bodyLarge)

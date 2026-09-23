@@ -1016,6 +1016,24 @@ the active tab (C), and a real frosted blur (A).
   with `dumpsys gfxinfo` reset/dump, 3 rounds after a warm-up. The blur
   itself only costs ~2ms/frame (GPU percentiles unchanged).
 
+## Stray taps while flicking — ScrollTapGuard — 2026-09-23
+
+User report (A73): fast scrolling kept opening artists / playing tracks by
+accident. A raw `getevent` recording of the user's own flicks showed the
+cause: between rapid strokes the panel reports **zero-movement touches of
+8–36ms**, often within 8–17ms of the previous flick's lift-off. No movement
+means Compose can only read them as taps. (Synthetic `adb input` gestures
+never reproduced it — they're too clean.) Short lists make it worse: the
+list hits its end almost instantly, so the stray touch lands on a settled list.
+
+`ui/components/ScrollTapGuard.kt` — `rememberScrollTapGuard(listState)` +
+`tapGuard.guard { ... }` drops a row tap while the list is scrolling or
+within 400ms of it stopping. Applied to the 5 tab lists (Artists incl. the
+Deezer "+" avatar, Albums, Tracks incl. Shuffle All, Folders, Playlists);
+any new list screen should use it too. Doesn't catch the stray touches that
+came 0.5–1s after a flick — those are indistinguishable from real taps. User
+accepted it as "works okay", will report if it recurs.
+
 ## Library scanning — folder exclusion (not in the original plan, now permanent)
 
 MediaStore's `IS_MUSIC` filter still lets through WhatsApp voice notes, the
