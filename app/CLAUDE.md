@@ -990,6 +990,37 @@ LOW_LATENCY: LOW_LATENCY only applies in the foreground with the screen on.
 - Verified on the A73 (no Node): app starts, nothing held while idle
   (`dumpsys wifi` / `dumpsys power` show no `Spindle:NodeStreaming`).
 
+### Phone IP change / WiFi drop recovery — 2026-09-23
+
+`MediaHttpServer` is bound to one WLAN IP (hard constraint: never `0.0.0.0`).
+`NodeOutput` registers a default-network callback from `connect()` (unregistered
+in `disconnect()`); on `onAvailable`/`onLinkPropertiesChanged` it calls
+`moveServerToCurrentAddress()`, which rebinds when **the IP changed or the
+server stopped listening** (local 500 ms socket connect to its own port).
+- **Found on the A73: WiFi off/on returns the *same* IP but the listen socket is
+  dead** (connection refused). The first version only compared addresses and
+  would have silently lost the stream on every WiFi blip — hence the liveness check.
+- After a rebind, the current item is re-issued by state: Playing → replay at the
+  interpolated position; Buffering → replay from 0; Idle that came from a
+  mid-track "stop" within 15 s (`IP_CHANGE_STOP_WINDOW_MS` — the real Node will
+  report stop when our stream dies) → replay at `lastKnownSecs`; Paused →
+  `reloadOnResume`, so `resume()` replays instead of `/Play` (the Node's paused
+  stream points at the dead URL); taken over → nothing (`resume()` replays anyway).
+- `play()` also calls `moveServerToCurrentAddress()` first, so a track change never
+  builds a URL on a stale address even if the callback hasn't fired yet.
+- One change fires several callbacks and the rebind suspends, so it's serialized
+  with a `Mutex` — otherwise two callbacks could both rebind and both replay.
+  Ktor start/stop block (~1.2 s), so they run on IO.
+- **Tested on the A73 against a fake Node** (Python stand-in on the PC — the guest
+  WiFi isolates clients, so BluOS traffic went over `adb reverse tcp:11000` and
+  Spindle connected via manual IP `127.0.0.1`; the phone's own server was probed
+  from inside the phone with `toybox nc`). WiFi off/on → "stopped listening —
+  restarting", new port, fresh `/Play?url=` + `/Play?seek=` at the right
+  position, new URL serves 206 with the right `icy-name`. Also confirmed there:
+  item 1 reads our echoed URL as OURS past the 10 s grace, and item 2's WifiLock
+  + wake lock are held while streaming and released after.
+- Not testable here without root: an actual *different* IP (DHCP decides).
+
 ### Pending verification at the Node (do together when the user is there)
 - [ ] Normal Node playback still reads as OURS: plays past 10 s, auto-advances,
       pause/resume work (also finally confirms `state == "pause"`).
@@ -1002,6 +1033,10 @@ LOW_LATENCY: LOW_LATENCY only applies in the foreground with the screen on.
       wake lock and `dumpsys wifi` the WifiLock; both gone after pause.
 - [ ] Screen off for a whole album on Node output (A73, then S25+): no stall
       between or mid-track. (Overlaps Phase 3 item 5.)
+- [ ] Real IP change mid-track (e.g. move the phone between guest and main WiFi,
+      if both reach the Node) → server rebinds, Node resumes at ~same position.
+- [ ] WiFi off/on mid-track with the real Node → resumes (fake-Node-verified;
+      confirms the real Node reports "stop" and the 15 s window catches it).
 
 ## Artist artwork — Deezer, opt-in per artist — 2026-09-22
 

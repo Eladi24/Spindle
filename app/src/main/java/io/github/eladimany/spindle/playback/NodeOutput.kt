@@ -1,6 +1,9 @@
 package io.github.eladimany.spindle.playback
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.LinkProperties
+import android.net.Network
 import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.BluOsPlayer
@@ -25,13 +28,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import timber.log.Timber
+import java.net.InetSocketAddress
+import java.net.Socket
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val LONG_POLL_TIMEOUT_SECONDS = 90
 private const val RETRY_DELAY_MS = 5_000L
 private const val TAKEOVER_GRACE_MS = 10_000L
+/** A mid-track "stop" this recent is assumed to be the IP change killing the stream, not a user. */
+private const val IP_CHANGE_STOP_WINDOW_MS = 15_000L
 
 /**
  * [AudioOutput] backed by a BluOS Node: serves the current track over
@@ -79,6 +89,18 @@ class NodeOutput @Inject constructor(
     private var seenOurs = false
     private var takenOver = false
 
+    // Phone IP change / WiFi drop recovery: the server is bound to one WLAN address,
+    // so a new address (or a dead listen socket) means restart it and re-issue the
+    // current track. reloadOnResume
+    // covers the change happening while paused — the Node's paused stream points
+    // at the dead URL, so resume() must replay rather than /Play.
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var reloadOnResume = false
+    private var stoppedMidTrackAtMs: Long? = null
+    // One network change fires several callbacks, and the rebind suspends —
+    // without this, two of them could both see the old address and both restart.
+    private val serverMutex = Mutex()
+
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     override val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
@@ -114,7 +136,8 @@ class NodeOutput @Inject constructor(
         val host = NetworkAddress.wlanIpv4(context)
             ?: error("Not on WiFi — can't serve files to a BluOS Node")
         player = target
-        serverAddress = mediaHttpServer.start(host)
+        serverAddress = withContext(Dispatchers.IO) { mediaHttpServer.start(host) }
+        registerNetworkCallback()
         // Volume matters even before anything's playing (unlike the /Status
         // loop, which only makes sense once play() has loaded something),
         // so this starts right away rather than lazily.
@@ -122,6 +145,7 @@ class NodeOutput @Inject constructor(
     }
 
     fun disconnect() {
+        unregisterNetworkCallback()
         statusJob?.cancel()
         statusJob = null
         syncStatusJob?.cancel()
@@ -138,11 +162,17 @@ class NodeOutput @Inject constructor(
         currentToken = null
         seenOurs = false
         takenOver = false
+        reloadOnResume = false
+        stoppedMidTrackAtMs = null
         _state.value = PlaybackState.Idle
     }
 
     override suspend fun play(item: QueueItem) {
         val target = player ?: return
+        if (serverAddress == null) return
+        // Cheap re-check so a track change never builds a URL on a stale address,
+        // even if the network callback hasn't fired yet.
+        moveServerToCurrentAddress()
         val address = serverAddress ?: return
         currentItem = item
         lastKnownSecs = 0
@@ -155,6 +185,8 @@ class NodeOutput @Inject constructor(
         playStartedAtMs = SystemClock.elapsedRealtime()
         seenOurs = false
         takenOver = false
+        reloadOnResume = false
+        stoppedMidTrackAtMs = null
         bluOsClient.playUrl(target, address.urlFor(token))
         ensureStatusLoop()
     }
@@ -165,12 +197,9 @@ class NodeOutput @Inject constructor(
     }
 
     override suspend fun resume() {
-        if (takenOver) {
-            // Take the Node back: replay our track where it was when it got taken over.
-            val item = currentItem ?: return
-            val resumeSeconds = lastKnownSecs
-            play(item)
-            if (resumeSeconds > 1) seek(resumeSeconds)
+        if (takenOver || reloadOnResume) {
+            // Take the Node back / reload from the new address, where we left off.
+            currentItem?.let { replayAt(it, lastKnownSecs) }
             return
         }
         player?.let { bluOsClient.resume(it) }
@@ -277,11 +306,96 @@ class NodeOutput @Inject constructor(
                 _state.value = if (seenOurs && NodeTrackEnd.isNaturalEnd(lastKnownSecs, lastKnownTotalSeconds)) {
                     PlaybackState.Ended(item)
                 } else {
-                    // Someone pressed stop in the BluOS app, mid-track — not our queue's business to advance.
+                    // Someone pressed stop in the BluOS app, mid-track — not our queue's business
+                    // to advance. (Or our stream died from an IP change — see onNetworkChanged.)
+                    stoppedMidTrackAtMs = SystemClock.elapsedRealtime()
                     PlaybackState.Idle
                 }
             }
             else -> Unit // Unrecognized state — keep the last known one rather than guess.
+        }
+    }
+
+    private suspend fun replayAt(item: QueueItem, seconds: Int) {
+        play(item)
+        if (seconds > 1) seek(seconds)
+    }
+
+    /**
+     * Rebinds [MediaHttpServer] if the phone's WLAN address changed **or the server
+     * stopped listening** — returns true if it did. The second case is real: found on
+     * the A73 that WiFi off/on comes back with the *same* IP but the listen socket
+     * gone (connection refused), so comparing addresses alone isn't enough.
+     * Ktor's start/stop block (stop waits up to ~1.2 s), so all of it runs on IO.
+     */
+    private suspend fun moveServerToCurrentAddress(): Boolean = serverMutex.withLock {
+        val address = serverAddress ?: return false
+        // Off WiFi: nothing to bind to yet — the callback fires again when it's back.
+        val host = NetworkAddress.wlanIpv4(context) ?: return false
+        val newAddress = withContext(Dispatchers.IO) {
+            when {
+                host != address.host ->
+                    Timber.i("Phone IP changed %s -> %s — restarting media server", address.host, host)
+                !isListening(address) ->
+                    Timber.i("Media server on %s:%d stopped listening — restarting", address.host, address.port)
+                else -> return@withContext null
+            }
+            mediaHttpServer.start(host)
+        } ?: return false
+        serverAddress = newAddress
+        true
+    }
+
+    private fun isListening(address: ServerAddress): Boolean = try {
+        Socket().use { it.connect(InetSocketAddress(address.host, address.port), 500) }
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    private fun registerNetworkCallback() {
+        if (networkCallback != null) return
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            // Called on ConnectivityThread — hop to scope, where all state lives.
+            override fun onAvailable(network: Network) {
+                scope.launch { onNetworkChanged() }
+            }
+
+            override fun onLinkPropertiesChanged(network: Network, linkProperties: LinkProperties) {
+                scope.launch { onNetworkChanged() }
+            }
+        }
+        cm.registerDefaultNetworkCallback(callback)
+        networkCallback = callback
+    }
+
+    private fun unregisterNetworkCallback() {
+        val callback = networkCallback ?: return
+        networkCallback = null
+        context.getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(callback)
+    }
+
+    private suspend fun onNetworkChanged() {
+        if (!moveServerToCurrentAddress()) return
+        val item = currentItem ?: return
+        if (takenOver) return // resume() replays anyway, on the new address.
+        when (val state = _state.value) {
+            is PlaybackState.Playing -> {
+                val positionMs = state.positionMs + (System.currentTimeMillis() - state.capturedAtMs)
+                replayAt(item, (positionMs.coerceIn(0, state.durationMs.coerceAtLeast(0)) / 1000).toInt())
+            }
+            is PlaybackState.Buffering -> replayAt(item, 0)
+            is PlaybackState.Idle -> {
+                val stoppedAt = stoppedMidTrackAtMs
+                if (stoppedAt != null && SystemClock.elapsedRealtime() - stoppedAt < IP_CHANGE_STOP_WINDOW_MS) {
+                    replayAt(item, lastKnownSecs)
+                }
+            }
+            is PlaybackState.Paused -> reloadOnResume = true
+            // Ended: PlaybackController is about to play() the next track, which
+            // already uses the new address. Error: nothing to recover.
+            else -> Unit
         }
     }
 }
