@@ -14,6 +14,8 @@ import io.github.eladimany.spindle.data.db.dao.ArtistDao
 import io.github.eladimany.spindle.data.db.dao.FolderDao
 import io.github.eladimany.spindle.data.db.dao.PlaylistDao
 import io.github.eladimany.spindle.data.db.dao.TrackDao
+import io.github.eladimany.spindle.data.history.HistoryDatabase
+import io.github.eladimany.spindle.data.history.PlayEventDao
 import javax.inject.Singleton
 
 @Module
@@ -27,6 +29,16 @@ object DatabaseModule {
             // Pre-release: no user data worth migrating yet. Revisit before v1.0 ships.
             .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
+
+    // No destructive fallback here: history can't be rebuilt by a rescan. Schema
+    // changes need a real Migration — see HistoryDatabase.
+    @Provides
+    @Singleton
+    fun provideHistoryDatabase(@ApplicationContext context: Context): HistoryDatabase =
+        Room.databaseBuilder(context, HistoryDatabase::class.java, "spindle-history.db").build()
+
+    @Provides
+    fun providePlayEventDao(db: HistoryDatabase): PlayEventDao = db.playEventDao()
 
     @Provides
     fun provideTrackDao(db: AppDatabase): TrackDao = db.trackDao()

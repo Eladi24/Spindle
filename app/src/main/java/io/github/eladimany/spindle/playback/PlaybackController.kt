@@ -7,6 +7,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.QueueItem
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.data.history.PlayEndReason
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,6 +35,7 @@ data class QueueState(
 @Singleton
 class PlaybackController @Inject constructor(
     private val output: AudioOutput,
+    private val history: PlayHistoryRecorder,
     @ApplicationContext private val context: Context,
 ) {
     private val queueManager = QueueManager()
@@ -71,6 +73,7 @@ class PlaybackController @Inject constructor(
     init {
         scope.launch {
             output.state.collect { state ->
+                history.onState(state)
                 if (state is PlaybackState.Ended) advance()
             }
         }
@@ -113,6 +116,7 @@ class PlaybackController @Inject constructor(
 
     fun next() {
         val hadItems = queueManager.size > 0
+        history.endCurrent(PlayEndReason.SKIPPED)
         val next = queueManager.next()
         when {
             next != null -> playItem(next)
@@ -121,6 +125,7 @@ class PlaybackController @Inject constructor(
     }
 
     fun previous() {
+        history.endCurrent(PlayEndReason.PREVIOUS)
         queueManager.previous()?.let { playItem(it) }
     }
 
@@ -157,6 +162,7 @@ class PlaybackController @Inject constructor(
     }
 
     private fun advance() {
+        history.endCurrent(PlayEndReason.COMPLETED)
         val next = queueManager.onTrackEnded()
         if (next != null) {
             refreshQueueState()
@@ -177,6 +183,7 @@ class PlaybackController @Inject constructor(
     private fun playItem(item: QueueItem) {
         refreshQueueState()
         ensureServiceStarted()
+        history.onItemStarted(item)
         scope.launch { output.play(item) }
     }
 

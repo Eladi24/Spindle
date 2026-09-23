@@ -1080,6 +1080,12 @@ Room, page from Room. Never load the whole library into memory.
 ./gradlew lint
 ```
 
+From Claude Code on this machine, run `sh ./gradlew ...` from the Bash tool:
+`gradlew.bat` fails with "-classpath requires class path specification" (it
+passes an empty `-classpath` that the installed JDK rejects). adb is at
+`$LOCALAPPDATA/Android/Sdk/platform-tools/adb.exe` (not on PATH); prefix adb
+shell calls with `MSYS_NO_PATHCONV=1` so Git Bash doesn't mangle `/sdcard/...`.
+
 Physical devices only for anything involving the Node — the emulator is behind
 NAT and the Node cannot reach a server running inside it.
 
@@ -1094,18 +1100,61 @@ Watch the conversation's context budget. If a session has been running long
 proactively tell the user it's getting full and this is a good point to wrap up —
 don't wait for things to visibly degrade first. Raised 2026-09-22.
 
-## Deferred discussion — once local playback is robust and the user is satisfied
+## Smart shuffle + AI playlists — direction agreed 2026-09-23 (not built yet)
 
-Raised 2026-09-22, deliberately not acted on yet:
+Raised 2026-09-22 as a deferred discussion; direction agreed with the user
+2026-09-23. **Order: finish Phase 3 first, then design these** (mockups before UI,
+per working style). Only the play-history logging below is built.
 
-- **Revisit the shuffle feature — "smart shuffle."** Current behavior: "Shuffle
-  All" (Tracks tab) and the shuffle toggle (Now Playing) both call
-  `QueueManager.setShuffled`, which Fisher-Yates permutes an index list once
-  and keeps that order until toggled off — this already guarantees each track
-  appears exactly once per shuffle pass (confirmed 2026-09-22: `order` is a
-  permutation of `items.indices`, never resampled with replacement). The user
-  wants to design a "smart shuffle" feature on top of this later — not scoped
-  at all yet, raise it with the user before doing any design or implementation
-  work on it.
-- **AI-generated playlists** — a possible future feature. Not scoped at all;
-  raise it with the user before doing any design or implementation work on it.
+User's constraints (non-negotiable):
+- **Size:** bounded, small storage. Budget ~1–2 MB for all history/stats. Never
+  bundle an LLM in the APK (a 0.5–1.5 GB model violates both size and speed).
+- **Speed:** normal app use must feel exactly as fast as today. AI generation may
+  take up to a few minutes worst case, but always in the background with the app
+  fully usable meanwhile.
+- **Cost:** the user will not pay for cloud AI.
+
+Agreed design direction:
+- **Smart shuffle = no AI.** Rules + listening history, fully on-device: spread
+  same artist/album apart, weight favourites up, recently-skipped down. Ordering
+  ~3900 tracks is milliseconds — same feel as current Fisher-Yates shuffle
+  (`QueueManager.setShuffled`, which guarantees each track once per pass — keep
+  that property).
+- **AI playlists = Gemini Nano (on-device, via Android's system AICore — 0 MB
+  added to the app)** as the primary path. Small context window, so it can't see
+  the whole library: use it to interpret the request (mood/genre/era/tempo
+  attributes), then the app selects matching tracks locally. The AI must only
+  ever pick from tracks the user owns. Availability on the S25+ is expected but
+  must be verified on-device before building on it; the ML Kit GenAI dependency
+  needs the usual ask-before-adding.
+- **Fallback when the phone lacks Gemini Nano:** optional cloud AI where the
+  *end user* registers and supplies their own API key (and pays, or uses a
+  provider's free tier). The developer never pays and never ships a key in the APK.
+  If cloud is used, library metadata leaves the phone → privacy policy must say so
+  (Phase 4).
+- Optional later: on-device audio analysis (tempo/energy) — only while charging +
+  idle, incrementally; ~1–2 MB of features. Not in the first version.
+
+### Play history logging — built 2026-09-23
+
+Started early so real data accumulates before the features above are built.
+- Separate Room DB **`spindle-history.db`** (`data/history/HistoryDatabase`),
+  *not* `AppDatabase`: the library DB uses destructive migration (it's a
+  rescannable cache); history can't be rebuilt, so **schema changes here need a
+  real `Migration`, never destructive fallback.** Schema JSON exported under
+  `app/schemas/...HistoryDatabase/`.
+- One `play_events` row per listen, written when the listen ends:
+  `trackId`, `trackKey` (FNV-1a 64-bit of normalized artist/album/title — survives
+  MediaStore id changes), `startedAtMs`, `listenedMs` (time actually in Playing,
+  pauses excluded), `trackDurationMs`, `endReason` (COMPLETED / SKIPPED / PREVIOUS /
+  REPLACED / ERROR). ~50 bytes/row. Aggregates are computed with SQL on demand,
+  not stored.
+- `PlayHistoryRecorder` (playback/) is driven by `PlaybackController`:
+  `onItemStarted` in `playItem`, `onState` for every output state, `endCurrent`
+  with SKIPPED in `next()`, PREVIOUS in `previous()`, COMPLETED in `advance()`;
+  anything else that starts a new item closes the old listen as REPLACED. Only the
+  insert runs on IO. Listens with 0 ms heard (tapped through while buffering) are
+  dropped. A listen in progress at process death is lost — acceptable.
+- Retention: events older than 365 days are pruned on startup.
+- Works identically for local and Node output (both emit Playing/Ended).
+- No UI yet. A "clear listening history" setting belongs in Phase 4 (privacy).
