@@ -941,6 +941,49 @@ bugs and closed the one deliberately-deferred piece:
   official BluOS Controller app's own now-playing view, same as `docs/PLAN.md`
   §Phase 2 already calls for ("verify a 24/192 FLAC reports as hi-res").
 
+## Phase 3 — robustness (started 2026-09-23)
+
+Scope/order: `docs/PLAN.md` §6 Phase 3. Built while away from the Node, so
+everything here is unit-tested but **not yet verified on real hardware** — see
+the checklist at the end of this section.
+
+### External change detection — 2026-09-23
+
+Someone else takes over the Node (BluOS app plays Tidal/radio/its own queue,
+another controller, a physical input) → Spindle steps back instead of fighting.
+- **Ownership = `streamUrl` contains `/t/{ourCurrentToken}`.** Pure, tested
+  classifier `NodeOwnership.classify()` (`NodeOwnershipTest`, 8 cases) →
+  OURS / TAKEN_OVER / UNKNOWN. Phase 0 showed the Node echoes the requested URL
+  verbatim (`BluOsXmlParserTest`'s captured `/Status`), so a UUID token survives.
+  **If that assumption is ever wrong, every Node track would read as taken
+  over ~10 s in** — first thing to check at the Node.
+- TAKEN_OVER: `isHijacked` (AudioInputs), any non-matching `streamUrl`, or
+  `state` "stream"/"play" with no URL (BluOS queue playback). **"stop"/"pause"
+  without a URL are UNKNOWN**, never takeover — `streamUrl` vanishes on stop
+  (bluos-api.md) and pause is unverified, so our own stream could look like that.
+- **Grace window (10 s, `TAKEOVER_GRACE_MS`) after each `/Play`:** a foreign
+  status only counts once our stream has been seen (`seenOurs`) or the window
+  passed — right after `/Play` the Node may still report what it was doing
+  before. A pre-confirmation "stop" is likewise ignored inside the window.
+  Natural-end auto-advance now also requires `seenOurs`.
+- **On takeover:** state becomes `Paused` at `lastKnownSecs` (not `Error`, which
+  made the mini-player vanish), and status is ignored until our next `play()`.
+  `pause()`/`stop()` don't touch the Node (not our music); `seek()` only moves
+  the resume point; **`resume()` takes the Node back** — replays the item and
+  seeks to the resume point (same play-then-seek as `AudioOutputSwitcher`).
+  The queue never auto-advances over someone else's playback.
+- Not done (needs a mockup first): any visible "Node is playing something else"
+  message — for now it just shows as paused.
+
+### Pending verification at the Node (do together when the user is there)
+- [ ] Normal Node playback still reads as OURS: plays past 10 s, auto-advances,
+      pause/resume work (also finally confirms `state == "pause"`).
+- [ ] Start something from the BluOS app mid-track → Spindle shows Paused, no
+      auto-advance, doesn't stop the other music. Press play in Spindle → Node
+      comes back to our track at about the same position.
+- [ ] Same with a physical input / Bluetooth to the Node (the `AudioInputs` path).
+- [ ] BluOS app "stop" mid-track → Spindle goes idle, no advance (unchanged path).
+
 ## Artist artwork — Deezer, opt-in per artist — 2026-09-22
 
 User wanted the Artists screen to show a band/artist photo. Explicit design

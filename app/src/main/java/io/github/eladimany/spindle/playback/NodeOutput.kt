@@ -1,6 +1,7 @@
 package io.github.eladimany.spindle.playback
 
 import android.content.Context
+import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.BluOsPlayer
 import io.github.eladimany.spindle.core.model.OutputCapabilities
@@ -9,6 +10,7 @@ import io.github.eladimany.spindle.core.model.QueueItem
 import io.github.eladimany.spindle.data.bluos.BluOsClient
 import io.github.eladimany.spindle.data.bluos.BluOsStatus
 import io.github.eladimany.spindle.data.bluos.IcyName
+import io.github.eladimany.spindle.data.bluos.NodeOwnership
 import io.github.eladimany.spindle.data.bluos.NodeTrackEnd
 import io.github.eladimany.spindle.data.server.MediaHttpServer
 import io.github.eladimany.spindle.data.server.NetworkAddress
@@ -29,6 +31,7 @@ import javax.inject.Singleton
 
 private const val LONG_POLL_TIMEOUT_SECONDS = 90
 private const val RETRY_DELAY_MS = 5_000L
+private const val TAKEOVER_GRACE_MS = 10_000L
 
 /**
  * [AudioOutput] backed by a BluOS Node: serves the current track over
@@ -66,6 +69,14 @@ class NodeOutput @Inject constructor(
     private var lastSyncEtag: String? = null
     private var lastKnownSecs: Int = 0
     private var lastKnownTotalSeconds: Int? = null
+
+    // Ownership of the Node for the current item — see NodeOwnership. Once
+    // takenOver, status is ignored until our next play(); the item shows as
+    // Paused and resume() takes the Node back at lastKnownSecs.
+    private var currentToken: String? = null
+    private var playStartedAtMs = 0L
+    private var seenOurs = false
+    private var takenOver = false
 
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     override val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -116,6 +127,9 @@ class NodeOutput @Inject constructor(
         lastSyncEtag = null
         lastKnownSecs = 0
         lastKnownTotalSeconds = null
+        currentToken = null
+        seenOurs = false
+        takenOver = false
         _state.value = PlaybackState.Idle
     }
 
@@ -129,26 +143,47 @@ class NodeOutput @Inject constructor(
 
         val icyName = IcyName.forTrack(item.track.artistName, item.track.title)
         val token = tokenRegistry.tokenFor(item.track.uri, icyName)
+        currentToken = token
+        playStartedAtMs = SystemClock.elapsedRealtime()
+        seenOurs = false
+        takenOver = false
         bluOsClient.playUrl(target, address.urlFor(token))
         ensureStatusLoop()
     }
 
     override suspend fun pause() {
+        if (takenOver) return // Already not ours — don't pause someone else's music.
         player?.let { bluOsClient.pause(it) }
     }
 
     override suspend fun resume() {
+        if (takenOver) {
+            // Take the Node back: replay our track where it was when it got taken over.
+            val item = currentItem ?: return
+            val resumeSeconds = lastKnownSecs
+            play(item)
+            if (resumeSeconds > 1) seek(resumeSeconds)
+            return
+        }
         player?.let { bluOsClient.resume(it) }
     }
 
     override suspend fun stop() {
-        player?.let { bluOsClient.stop(it) }
+        if (!takenOver) player?.let { bluOsClient.stop(it) }
+        takenOver = false
         currentItem = null
         _state.value = PlaybackState.Idle
     }
 
     /** Only takes effect when the Node's own last-reported status had `canSeek=1`. */
     override suspend fun seek(seconds: Int) {
+        if (takenOver) {
+            // Don't seek their stream — just move where "take it back" will resume.
+            val item = currentItem ?: return
+            lastKnownSecs = seconds
+            _state.value = PlaybackState.Paused(item, seconds * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
+            return
+        }
         player?.let { bluOsClient.seek(it, seconds) }
     }
 
@@ -201,11 +236,21 @@ class NodeOutput @Inject constructor(
 
     private fun applyStatus(status: BluOsStatus) {
         val item = currentItem ?: return
+        val token = currentToken ?: return
+        if (takenOver) return
+        val msSincePlay = SystemClock.elapsedRealtime() - playStartedAtMs
+        val verdict = NodeOwnership.classify(status, token, seenOurs, msSincePlay, TAKEOVER_GRACE_MS)
+        if (verdict == NodeOwnership.Verdict.TAKEN_OVER) {
+            Timber.i("Node taken over (state=%s service=%s) — stepping back", status.state, status.serviceType)
+            takenOver = true
+            _state.value = PlaybackState.Paused(item, lastKnownSecs * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
+            return
+        }
+        if (verdict == NodeOwnership.Verdict.OURS) seenOurs = true
         when {
-            status.isHijacked -> {
-                _state.value = PlaybackState.Error(item, "Node switched to ${status.title1 ?: "another input"}")
-            }
             status.state == "stream" -> {
+                // UNKNOWN here = a foreign stream inside the post-/Play grace window; not ours to display.
+                if (verdict != NodeOwnership.Verdict.OURS) return
                 lastKnownSecs = status.secs
                 lastKnownTotalSeconds = status.totalSeconds
                 _state.value = PlaybackState.Playing(item, status.secs * 1000L, (status.totalSeconds ?: 0) * 1000L)
@@ -218,7 +263,10 @@ class NodeOutput @Inject constructor(
                 _state.value = PlaybackState.Paused(item, lastKnownSecs * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
             }
             status.state == "stop" -> {
-                _state.value = if (NodeTrackEnd.isNaturalEnd(lastKnownSecs, lastKnownTotalSeconds)) {
+                // Before our stream has shown up, "stop" is most likely the Node's
+                // leftover pre-/Play state — ignore it inside the grace window.
+                if (!seenOurs && msSincePlay < TAKEOVER_GRACE_MS) return
+                _state.value = if (seenOurs && NodeTrackEnd.isNaturalEnd(lastKnownSecs, lastKnownTotalSeconds)) {
                     PlaybackState.Ended(item)
                 } else {
                     // Someone pressed stop in the BluOS app, mid-track — not our queue's business to advance.
