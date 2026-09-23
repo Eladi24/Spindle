@@ -21,6 +21,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
+import io.github.eladimany.spindle.ui.components.SectionAnchor
+import io.github.eladimany.spindle.ui.components.sectionAnchors
 import javax.inject.Inject
 
 @HiltViewModel
@@ -28,10 +30,17 @@ class ArtistsViewModel @Inject constructor(
     libraryRepository: LibraryRepository,
     private val artistArtworkRepository: ArtistArtworkRepository,
 ) : ViewModel() {
+    // Placeholders + a jump threshold so the alphabet rail can jump straight to a distant
+    // letter — same setup as TracksViewModel.
     val artists: Flow<PagingData<Artist>> =
-        Pager(PagingConfig(pageSize = 60, enablePlaceholders = false)) {
+        Pager(PagingConfig(pageSize = 60, enablePlaceholders = true, jumpThreshold = 180)) {
             libraryRepository.artistsPagingSource()
         }.flow.map { it.map { entity -> entity.toDomain() } }.cachedIn(viewModelScope)
+
+    // Positions into LibraryRepository.artists, which uses the same nameSortKey order as the pager.
+    val sectionIndex: StateFlow<List<SectionAnchor>> = libraryRepository.artists
+        .map { artists -> sectionAnchors(artists) { it.name } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val artworkByArtistId: StateFlow<Map<Long, String>> = artistArtworkRepository.artworkByArtistId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())

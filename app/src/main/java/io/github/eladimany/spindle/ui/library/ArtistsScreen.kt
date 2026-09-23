@@ -8,8 +8,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,6 +31,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,8 +45,11 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import io.github.eladimany.spindle.core.model.Artist
+import io.github.eladimany.spindle.ui.components.AlphabetIndexBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.ScrubLetterBubble
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
+import kotlinx.coroutines.launch
 
 @Composable
 fun ArtistsScreen(
@@ -53,6 +63,9 @@ fun ArtistsScreen(
     val fetchingIds by viewModel.fetchingIds.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val tapGuard = rememberScrollTapGuard(listState)
+    val sectionIndex by viewModel.sectionIndex.collectAsStateWithLifecycle()
+    var scrubLetter by remember { mutableStateOf<Char?>(null) }
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         modifier = modifier,
@@ -67,22 +80,52 @@ fun ArtistsScreen(
             )
         },
     ) { innerPadding ->
-        LazyColumn(
-            state = listState,
-            modifier = Modifier.padding(innerPadding).fillMaxSize(),
-            contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
-        ) {
-            items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
-                val artist = artists[index] ?: return@items
-                ArtistRow(
-                    artist = artist,
-                    imageUrl = artworkByArtistId[artist.id],
-                    isFetching = artist.id in fetchingIds,
-                    onClick = tapGuard.guard { onArtistClick(artist.id) },
-                    // Guarded too: a stray tap here would send the artist's name to Deezer.
-                    onFetchArtwork = tapGuard.guard { viewModel.fetchArtwork(artist) },
+        Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+            ) {
+                items(count = artists.itemCount, key = artists.itemKey { it.id }) { index ->
+                    val artist = artists[index]
+                    if (artist != null) {
+                        ArtistRow(
+                            artist = artist,
+                            imageUrl = artworkByArtistId[artist.id],
+                            isFetching = artist.id in fetchingIds,
+                            onClick = tapGuard.guard { onArtistClick(artist.id) },
+                            // Guarded too: a stray tap here would send the artist's name to Deezer.
+                            onFetchArtwork = tapGuard.guard { viewModel.fetchArtwork(artist) },
+                        )
+                    } else {
+                        // Not-yet-loaded placeholder after a rail jump: same height as ArtistRow
+                        // (56dp avatar + 2 x 10dp padding) so the list doesn't shift when it loads.
+                        Spacer(modifier = Modifier.fillMaxWidth().height(76.dp))
+                    }
+                }
+            }
+
+            if (sectionIndex.isNotEmpty()) {
+                AlphabetIndexBar(
+                    sections = sectionIndex,
+                    onScrub = { section, active ->
+                        if (active) {
+                            scrubLetter = section.letter
+                            scope.launch {
+                                listState.scrollToItem(section.index.coerceAtMost(artists.itemCount))
+                            }
+                        } else {
+                            scrubLetter = null
+                        }
+                    },
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .fillMaxHeight()
+                        .padding(top = 4.dp, bottom = 4.dp + LocalBottomOverlayPadding.current),
                 )
             }
+
+            scrubLetter?.let { ScrubLetterBubble(it, Modifier.align(Alignment.Center)) }
         }
     }
 }

@@ -23,11 +23,9 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import io.github.eladimany.spindle.ui.components.SectionAnchor
+import io.github.eladimany.spindle.ui.components.sectionAnchors
 import javax.inject.Inject
-
-/** Where letter [letter]'s tracks start in the title-sorted list — [index] is a position
- * into [LibraryRepository.tracks], which is title-ordered regardless of the paging [sort]. */
-data class SectionAnchor(val letter: Char, val index: Int)
 
 @HiltViewModel
 class TracksViewModel @Inject constructor(
@@ -45,19 +43,7 @@ class TracksViewModel @Inject constructor(
     // A-Z + '#' fast-scroll anchors. Only meaningful while sorted by title — the screen
     // hides the index strip otherwise, since these positions won't line up with any other order.
     val sectionIndex: StateFlow<List<SectionAnchor>> = libraryRepository.tracks
-        .map { tracks ->
-            val anchors = mutableListOf<SectionAnchor>()
-            var lastLetter: Char? = null
-            tracks.forEachIndexed { index, track ->
-                val first = track.title.firstOrNull()?.uppercaseChar()
-                val letter = if (first != null && first in 'A'..'Z') first else '#'
-                if (letter != lastLetter) {
-                    anchors += SectionAnchor(letter, index)
-                    lastLetter = letter
-                }
-            }
-            anchors
-        }
+        .map { tracks -> sectionAnchors(tracks) { it.title } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     // Placeholders + a jump threshold let the paged list load pages around a fast-scroll

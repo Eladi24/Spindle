@@ -1,13 +1,8 @@
 package io.github.eladimany.spindle.ui.library
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -15,12 +10,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -44,9 +36,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -54,7 +43,9 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.core.model.TrackSort
+import io.github.eladimany.spindle.ui.components.AlphabetIndexBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.ScrubLetterBubble
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
@@ -166,22 +157,7 @@ fun TracksScreen(
                 )
             }
 
-            scrubLetter?.let { letter ->
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        letter.toString(),
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                    )
-                }
-            }
+            scrubLetter?.let { ScrubLetterBubble(it, Modifier.align(Alignment.Center)) }
         }
     }
 
@@ -223,53 +199,6 @@ private fun ShuffleAllRow(onClick: () -> Unit) {
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 10.dp),
-            )
-        }
-    }
-}
-
-/**
- * A-Z (+ "#") fast-scroll rail. A single unified gesture handles both a tap (jumps once)
- * and a drag (scrubs continuously) — [awaitFirstDown] fires on first touch with no slop,
- * then [drag] tracks the same pointer for as long as it's down.
- */
-@Composable
-private fun AlphabetIndexBar(
-    sections: List<SectionAnchor>,
-    onScrub: (SectionAnchor, active: Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    var heightPx by remember { mutableStateOf(0f) }
-
-    fun sectionForY(y: Float): SectionAnchor {
-        val fraction = if (heightPx > 0f) (y / heightPx).coerceIn(0f, 1f) else 0f
-        val index = (fraction * (sections.size - 1)).toInt().coerceIn(0, sections.lastIndex)
-        return sections[index]
-    }
-
-    Column(
-        modifier = modifier
-            .width(24.dp)
-            .onGloballyPositioned { heightPx = it.size.height.toFloat() }
-            .pointerInput(sections) {
-                awaitEachGesture {
-                    val down = awaitFirstDown()
-                    onScrub(sectionForY(down.position.y), true)
-                    drag(down.id) { change ->
-                        onScrub(sectionForY(change.position.y), true)
-                        change.consume()
-                    }
-                    onScrub(sections.first(), false)
-                }
-            },
-        verticalArrangement = Arrangement.SpaceEvenly,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        sections.forEach { section ->
-            Text(
-                text = section.letter.toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
             )
         }
     }
