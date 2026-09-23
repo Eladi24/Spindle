@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -35,6 +36,7 @@ import io.github.eladimany.spindle.ui.playlists.AddToPlaylistSheet
 
 @Composable
 fun ArtistDetailScreen(
+    onBack: () -> Unit,
     onAlbumClick: (Long) -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ArtistDetailViewModel = hiltViewModel(),
@@ -49,6 +51,11 @@ fun ArtistDetailScreen(
         topBar = {
             TopAppBar(
                 title = { Text(artist?.name ?: "") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 actions = {
                     IconButton(onClick = { addToPlaylistTrackIds = tracks.map { it.id } }) {
                         Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Add artist to playlist")

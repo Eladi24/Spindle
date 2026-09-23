@@ -156,7 +156,10 @@ fun AppNavHost() {
                     Routes.ARTIST_DETAIL_PATTERN,
                     arguments = listOf(navArgument("artistId") { type = NavType.LongType }),
                 ) {
-                    ArtistDetailScreen(onAlbumClick = { navController.navigate(Routes.albumDetail(it)) })
+                    ArtistDetailScreen(
+                        onBack = { navController.popBackStack() },
+                        onAlbumClick = { navController.navigate(Routes.albumDetail(it)) },
+                    )
                 }
 
                 composable(Routes.ALBUMS) {
@@ -169,7 +172,7 @@ fun AppNavHost() {
                     Routes.ALBUM_DETAIL_PATTERN,
                     arguments = listOf(navArgument("albumId") { type = NavType.LongType }),
                 ) {
-                    AlbumDetailScreen()
+                    AlbumDetailScreen(onBack = { navController.popBackStack() })
                 }
 
                 composable(Routes.FOLDERS) {
@@ -183,7 +186,7 @@ fun AppNavHost() {
                     Routes.FOLDER_DETAIL_PATTERN,
                     arguments = listOf(navArgument("folderId") { type = NavType.LongType }),
                 ) {
-                    FolderDetailScreen()
+                    FolderDetailScreen(onBack = { navController.popBackStack() })
                 }
 
                 composable(Routes.PLAYLISTS) {
@@ -196,10 +199,10 @@ fun AppNavHost() {
                     Routes.PLAYLIST_DETAIL_PATTERN,
                     arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
                 ) {
-                    PlaylistDetailScreen()
+                    PlaylistDetailScreen(onBack = { navController.popBackStack() })
                 }
 
-                composable(Routes.MANAGE_FOLDERS) { FoldersScreen() }
+                composable(Routes.MANAGE_FOLDERS) { FoldersScreen(onBack = { navController.popBackStack() }) }
 
                 composable(Routes.NOW_PLAYING) {
                     NowPlayingScreen(

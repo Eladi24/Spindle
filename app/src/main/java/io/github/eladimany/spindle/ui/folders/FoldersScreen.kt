@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -31,6 +32,7 @@ import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 
 @Composable
 fun FoldersScreen(
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: FoldersViewModel = hiltViewModel(),
 ) {
@@ -42,6 +44,11 @@ fun FoldersScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Manage folders") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 actions = {
                     IconButton(onClick = viewModel::rescanLibrary, enabled = !isScanning) {
                         if (isScanning) {
