@@ -55,6 +55,7 @@ class NodeOutput @Inject constructor(
     private val bluOsClient: BluOsClient,
     private val mediaHttpServer: MediaHttpServer,
     private val tokenRegistry: TokenRegistry,
+    private val streamingLocks: NodeStreamingLocks,
     @ApplicationContext private val context: Context,
 ) : AudioOutput {
 
@@ -93,6 +94,13 @@ class NodeOutput @Inject constructor(
     // confirmed hard fact (bluos-api.md: "gapless is not achievable this
     // way"), not a simplification.
     override val capabilities = OutputCapabilities(canSeek = true, canSetVolume = true, isGapless = false)
+
+    init {
+        // Idle/Paused/Ended/Error (incl. takeover and disconnect) all release.
+        scope.launch {
+            _state.collect { streamingLocks.setHeld(it is PlaybackState.Playing || it is PlaybackState.Buffering) }
+        }
+    }
 
     /**
      * Starts serving from this device and targets [target]. Throws if the

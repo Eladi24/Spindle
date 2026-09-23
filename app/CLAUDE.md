@@ -975,6 +975,21 @@ another controller, a physical input) → Spindle steps back instead of fighting
 - Not done (needs a mockup first): any visible "Node is playing something else"
   message — for now it just shows as paused.
 
+### WiFi + CPU locks while streaming to the Node — 2026-09-23
+
+`NodeStreamingLocks` (playback/): a `WIFI_MODE_FULL_HIGH_PERF` WifiLock **plus**
+a `PARTIAL_WAKE_LOCK` — on Node output nothing plays locally, so with the screen
+off the CPU can sleep too, and a WiFi lock alone wouldn't keep `MediaHttpServer`
+serving. Same pair Media3 uses for `WAKE_MODE_NETWORK`. HIGH_PERF, not
+LOW_LATENCY: LOW_LATENCY only applies in the foreground with the screen on.
+- Held only while `NodeOutput.state` is Playing or Buffering (a collector in
+  `NodeOutput.init`); every other state — pause, idle, takeover, disconnect —
+  releases. Non-reference-counted; `setHeld` is idempotent since Playing emits
+  repeatedly.
+- Adds `WAKE_LOCK` to the manifest (normal permission, no prompt).
+- Verified on the A73 (no Node): app starts, nothing held while idle
+  (`dumpsys wifi` / `dumpsys power` show no `Spindle:NodeStreaming`).
+
 ### Pending verification at the Node (do together when the user is there)
 - [ ] Normal Node playback still reads as OURS: plays past 10 s, auto-advances,
       pause/resume work (also finally confirms `state == "pause"`).
@@ -983,6 +998,10 @@ another controller, a physical input) → Spindle steps back instead of fighting
       comes back to our track at about the same position.
 - [ ] Same with a physical input / Bluetooth to the Node (the `AudioInputs` path).
 - [ ] BluOS app "stop" mid-track → Spindle goes idle, no advance (unchanged path).
+- [ ] Locks: while streaming, `adb shell dumpsys power | grep Spindle` shows the
+      wake lock and `dumpsys wifi` the WifiLock; both gone after pause.
+- [ ] Screen off for a whole album on Node output (A73, then S25+): no stall
+      between or mid-track. (Overlaps Phase 3 item 5.)
 
 ## Artist artwork — Deezer, opt-in per artist — 2026-09-22
 
