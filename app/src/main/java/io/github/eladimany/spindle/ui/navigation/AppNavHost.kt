@@ -1,22 +1,24 @@
 package io.github.eladimany.spindle.ui.navigation
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
@@ -25,7 +27,14 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import dev.chrisbanes.haze.hazeSource
+import dev.chrisbanes.haze.rememberHazeState
+import io.github.eladimany.spindle.ui.components.FloatingNavBar
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.MiniPlayerBar
+import io.github.eladimany.spindle.ui.components.NavTab
+import io.github.eladimany.spindle.ui.components.glassSurface
+import io.github.eladimany.spindle.ui.components.spindleGlassStyle
 import io.github.eladimany.spindle.ui.folders.FoldersScreen
 import io.github.eladimany.spindle.ui.library.AlbumDetailScreen
 import io.github.eladimany.spindle.ui.library.AlbumsScreen
@@ -42,14 +51,12 @@ import io.github.eladimany.spindle.ui.playlists.PlaylistsScreen
 import io.github.eladimany.spindle.ui.search.SearchScreen
 import io.github.eladimany.spindle.playback.QueueManager
 
-private data class BottomTab(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
-
 private val bottomTabs = listOf(
-    BottomTab(Routes.ARTISTS, "Artists", Icons.Default.Person),
-    BottomTab(Routes.ALBUMS, "Albums", Icons.Default.Album),
-    BottomTab(Routes.TRACKS, "Tracks", Icons.Default.MusicNote),
-    BottomTab(Routes.FOLDERS, "Folders", Icons.Default.Folder),
-    BottomTab(Routes.PLAYLISTS, "Playlists", Icons.AutoMirrored.Filled.QueueMusic),
+    NavTab(Routes.ARTISTS, "Artists", Icons.Default.Person),
+    NavTab(Routes.ALBUMS, "Albums", Icons.Default.Album),
+    NavTab(Routes.TRACKS, "Tracks", Icons.Default.MusicNote),
+    NavTab(Routes.FOLDERS, "Folders", Icons.Default.Folder),
+    NavTab(Routes.PLAYLISTS, "Playlists", Icons.AutoMirrored.Filled.QueueMusic),
 )
 
 @Composable
@@ -74,10 +81,22 @@ fun AppNavHost() {
     val previousTrack = queueState.items.getOrNull(queueState.currentIndex - 1)?.track
         ?: queueState.items.lastOrNull()?.track.takeIf { queueState.repeatMode == QueueManager.RepeatMode.ALL }
 
+    // Screen content is the blur source; the mini-player and nav island are frosted
+    // glass floating over it, so rows scroll visibly behind them.
+    val hazeState = rememberHazeState()
+    val glassStyle = spindleGlassStyle()
+
     Scaffold(
         bottomBar = {
-            Column {
-                if (showMiniPlayer) {
+            // Top-level routes are a subset of showMiniPlayer's, so this gates the nav island too.
+            if (showMiniPlayer) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(start = 12.dp, end = 12.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
                     MiniPlayerBar(
                         playbackState = playbackState,
                         onTogglePlayPause = playerViewModel::togglePlayPause,
@@ -87,113 +106,120 @@ fun AppNavHost() {
                         fetchArtworkUri = playerViewModel::artworkUriFor,
                         nextTrack = nextTrack,
                         previousTrack = previousTrack,
+                        modifier = Modifier.glassSurface(hazeState, glassStyle, RoundedCornerShape(20.dp)),
                     )
-                }
-                if (isTopLevel) {
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.85f),
-                    ) {
-                        bottomTabs.forEach { tab ->
-                            NavigationBarItem(
-                                selected = currentRoute == tab.route,
-                                onClick = {
-                                    navController.navigate(tab.route) {
-                                        popUpTo(navController.graph.startDestinationId) { saveState = true }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                },
-                                icon = { Icon(tab.icon, contentDescription = tab.label) },
-                                label = { Text(tab.label) },
-                            )
-                        }
+                    if (isTopLevel) {
+                        FloatingNavBar(
+                            tabs = bottomTabs,
+                            selectedRoute = currentRoute,
+                            onSelect = { tab ->
+                                navController.navigate(tab.route) {
+                                    popUpTo(navController.graph.startDestinationId) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp)
+                                .glassSurface(hazeState, glassStyle, RoundedCornerShape(32.dp)),
+                        )
                     }
                 }
             }
         },
     ) { innerPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Routes.ARTISTS,
-            modifier = Modifier.padding(innerPadding),
-        ) {
-            composable(Routes.TRACKS) {
-                TracksScreen(onSearchClick = { navController.navigate(Routes.SEARCH) })
-            }
-
-            composable(Routes.ARTISTS) {
-                ArtistsScreen(
-                    onArtistClick = { navController.navigate(Routes.artistDetail(it)) },
-                    onSearchClick = { navController.navigate(Routes.SEARCH) },
-                )
-            }
-            composable(
-                Routes.ARTIST_DETAIL_PATTERN,
-                arguments = listOf(navArgument("artistId") { type = NavType.LongType }),
+        // Where the overlay is shown, content runs all the way to the bottom edge and
+        // each list pads itself via LocalBottomOverlayPadding instead. Now Playing and
+        // Queue have no overlay and keep the plain inset padding they always had.
+        val overlayBottom = innerPadding.calculateBottomPadding()
+        CompositionLocalProvider(LocalBottomOverlayPadding provides if (showMiniPlayer) overlayBottom else 0.dp) {
+            NavHost(
+                navController = navController,
+                startDestination = Routes.ARTISTS,
+                modifier = Modifier
+                    .hazeSource(hazeState)
+                    .padding(top = innerPadding.calculateTopPadding(), bottom = if (showMiniPlayer) 0.dp else overlayBottom)
+                    .consumeWindowInsets(innerPadding),
             ) {
-                ArtistDetailScreen(onAlbumClick = { navController.navigate(Routes.albumDetail(it)) })
-            }
+                composable(Routes.TRACKS) {
+                    TracksScreen(onSearchClick = { navController.navigate(Routes.SEARCH) })
+                }
 
-            composable(Routes.ALBUMS) {
-                AlbumsScreen(
-                    onAlbumClick = { navController.navigate(Routes.albumDetail(it)) },
-                    onSearchClick = { navController.navigate(Routes.SEARCH) },
-                )
-            }
-            composable(
-                Routes.ALBUM_DETAIL_PATTERN,
-                arguments = listOf(navArgument("albumId") { type = NavType.LongType }),
-            ) {
-                AlbumDetailScreen()
-            }
+                composable(Routes.ARTISTS) {
+                    ArtistsScreen(
+                        onArtistClick = { navController.navigate(Routes.artistDetail(it)) },
+                        onSearchClick = { navController.navigate(Routes.SEARCH) },
+                    )
+                }
+                composable(
+                    Routes.ARTIST_DETAIL_PATTERN,
+                    arguments = listOf(navArgument("artistId") { type = NavType.LongType }),
+                ) {
+                    ArtistDetailScreen(onAlbumClick = { navController.navigate(Routes.albumDetail(it)) })
+                }
 
-            composable(Routes.FOLDERS) {
-                FolderBrowseScreen(
-                    onFolderClick = { navController.navigate(Routes.folderDetail(it)) },
-                    onManageFolders = { navController.navigate(Routes.MANAGE_FOLDERS) },
-                    onSearchClick = { navController.navigate(Routes.SEARCH) },
-                )
-            }
-            composable(
-                Routes.FOLDER_DETAIL_PATTERN,
-                arguments = listOf(navArgument("folderId") { type = NavType.LongType }),
-            ) {
-                FolderDetailScreen()
-            }
+                composable(Routes.ALBUMS) {
+                    AlbumsScreen(
+                        onAlbumClick = { navController.navigate(Routes.albumDetail(it)) },
+                        onSearchClick = { navController.navigate(Routes.SEARCH) },
+                    )
+                }
+                composable(
+                    Routes.ALBUM_DETAIL_PATTERN,
+                    arguments = listOf(navArgument("albumId") { type = NavType.LongType }),
+                ) {
+                    AlbumDetailScreen()
+                }
 
-            composable(Routes.PLAYLISTS) {
-                PlaylistsScreen(
-                    onPlaylistClick = { navController.navigate(Routes.playlistDetail(it)) },
-                    onSearchClick = { navController.navigate(Routes.SEARCH) },
-                )
-            }
-            composable(
-                Routes.PLAYLIST_DETAIL_PATTERN,
-                arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
-            ) {
-                PlaylistDetailScreen()
-            }
+                composable(Routes.FOLDERS) {
+                    FolderBrowseScreen(
+                        onFolderClick = { navController.navigate(Routes.folderDetail(it)) },
+                        onManageFolders = { navController.navigate(Routes.MANAGE_FOLDERS) },
+                        onSearchClick = { navController.navigate(Routes.SEARCH) },
+                    )
+                }
+                composable(
+                    Routes.FOLDER_DETAIL_PATTERN,
+                    arguments = listOf(navArgument("folderId") { type = NavType.LongType }),
+                ) {
+                    FolderDetailScreen()
+                }
 
-            composable(Routes.MANAGE_FOLDERS) { FoldersScreen() }
+                composable(Routes.PLAYLISTS) {
+                    PlaylistsScreen(
+                        onPlaylistClick = { navController.navigate(Routes.playlistDetail(it)) },
+                        onSearchClick = { navController.navigate(Routes.SEARCH) },
+                    )
+                }
+                composable(
+                    Routes.PLAYLIST_DETAIL_PATTERN,
+                    arguments = listOf(navArgument("playlistId") { type = NavType.LongType }),
+                ) {
+                    PlaylistDetailScreen()
+                }
 
-            composable(Routes.NOW_PLAYING) {
-                NowPlayingScreen(
-                    viewModel = playerViewModel,
-                    onBack = { navController.popBackStack() },
-                    onOpenQueue = { navController.navigate(Routes.QUEUE) },
-                )
-            }
+                composable(Routes.MANAGE_FOLDERS) { FoldersScreen() }
 
-            composable(Routes.QUEUE) {
-                QueueScreen(onBack = { navController.popBackStack() }, viewModel = playerViewModel)
-            }
+                composable(Routes.NOW_PLAYING) {
+                    NowPlayingScreen(
+                        viewModel = playerViewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenQueue = { navController.navigate(Routes.QUEUE) },
+                    )
+                }
 
-            composable(Routes.SEARCH) {
-                SearchScreen(
-                    onBack = { navController.popBackStack() },
-                    onArtistClick = { navController.navigate(Routes.artistDetail(it)) },
-                    onAlbumClick = { navController.navigate(Routes.albumDetail(it)) },
-                )
+                composable(Routes.QUEUE) {
+                    QueueScreen(onBack = { navController.popBackStack() }, viewModel = playerViewModel)
+                }
+
+                composable(Routes.SEARCH) {
+                    SearchScreen(
+                        onBack = { navController.popBackStack() },
+                        onArtistClick = { navController.navigate(Routes.artistDetail(it)) },
+                        onAlbumClick = { navController.navigate(Routes.albumDetail(it)) },
+                    )
+                }
             }
         }
     }

@@ -1,5 +1,6 @@
 package io.github.eladimany.spindle.ui.library
 
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 
@@ -33,7 +35,10 @@ fun FolderDetailScreen(
         modifier = modifier,
         topBar = { TopAppBar(title = { Text(folder?.name ?: "") }) },
     ) { innerPadding ->
-        LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding).fillMaxSize(),
+            contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+        ) {
             items(tracks, key = { it.id }) { track ->
                 TrackRow(
                     track = track,

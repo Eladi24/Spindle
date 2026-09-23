@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -57,6 +58,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.PlaylistEntry
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackArtwork
 import kotlinx.coroutines.launch
@@ -95,7 +97,7 @@ fun PlaylistDetailScreen(
 
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SnackbarHost(snackbarHostState, modifier = Modifier.padding(bottom = LocalBottomOverlayPadding.current)) },
         topBar = {
             TopAppBar(
                 title = { Text(playlist?.name ?: "") },
@@ -127,6 +129,7 @@ fun PlaylistDetailScreen(
         LazyColumn(
             state = listState,
             modifier = Modifier.padding(innerPadding).fillMaxSize(),
+            contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
         ) {
             itemsIndexed(displayEntries, key = { _, entry -> entry.crossRefId }) { _, entry ->
                 val isDragging = entry.crossRefId == draggingId

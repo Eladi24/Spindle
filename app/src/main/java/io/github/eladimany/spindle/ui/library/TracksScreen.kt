@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.drag
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -53,6 +54,7 @@ import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.core.model.TrackSort
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 import kotlinx.coroutines.launch
@@ -108,14 +110,18 @@ fun TracksScreen(
         },
     ) { innerPadding ->
         if (tracks.itemCount == 0) {
-            Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(innerPadding).padding(bottom = LocalBottomOverlayPadding.current), contentAlignment = Alignment.Center) {
                 Text("No tracks yet", style = MaterialTheme.typography.bodyLarge)
             }
             return@Scaffold
         }
 
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
-            LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+            ) {
                 item {
                     ShuffleAllRow(onClick = viewModel::shuffleAll)
                 }
@@ -152,7 +158,9 @@ fun TracksScreen(
                     modifier = Modifier
                         .align(Alignment.CenterEnd)
                         .fillMaxHeight()
-                        .padding(vertical = 4.dp),
+                        // Stays clear of the floating bar, or its bottom letters would be
+                        // unreachable underneath it.
+                        .padding(top = 4.dp, bottom = 4.dp + LocalBottomOverlayPadding.current),
                 )
             }
 

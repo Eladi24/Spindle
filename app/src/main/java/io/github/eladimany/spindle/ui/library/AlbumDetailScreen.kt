@@ -2,6 +2,7 @@ package io.github.eladimany.spindle.ui.library
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,6 +30,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.ui.components.AlbumArtwork
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 import io.github.eladimany.spindle.ui.playlists.AddToPlaylistSheet
@@ -57,7 +59,10 @@ fun AlbumDetailScreen(
             )
         },
     ) { innerPadding ->
-        LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding).fillMaxSize(),
+            contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+        ) {
             item {
                 album?.let { a ->
                     Row(

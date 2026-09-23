@@ -4,6 +4,7 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Playlist
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 
 @Composable
 fun PlaylistsScreen(
@@ -75,7 +77,7 @@ fun PlaylistsScreen(
 
     Scaffold(
         modifier = modifier,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
+        snackbarHost = { SnackbarHost(snackbarHostState, modifier = Modifier.padding(bottom = LocalBottomOverlayPadding.current)) },
         topBar = {
             TopAppBar(
                 title = { Text("Playlists") },
@@ -102,7 +104,10 @@ fun PlaylistsScreen(
                 style = MaterialTheme.typography.bodyLarge,
             )
         } else {
-            LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            LazyColumn(
+                modifier = Modifier.padding(innerPadding).fillMaxSize(),
+                contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+            ) {
                 items(playlists, key = { it.id }) { playlist ->
                     Row(
                         modifier = Modifier

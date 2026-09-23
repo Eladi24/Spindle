@@ -1,6 +1,7 @@
 package io.github.eladimany.spindle.ui.folders
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Folder
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 
 @Composable
 fun FoldersScreen(
@@ -52,7 +54,10 @@ fun FoldersScreen(
             )
         },
     ) { innerPadding ->
-        LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxWidth()) {
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding).fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+        ) {
             item {
                 Text(
                     text = "Choose which folders are part of your library. Turn off " +

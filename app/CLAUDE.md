@@ -14,7 +14,7 @@ Trust that file over any assumption about BluOS.
 
 Kotlin 2.2.10 · AGP 9.4.1 (built-in Kotlin) · Jetpack Compose + Material 3
 MVVM (ViewModel + StateFlow) · Hilt · Coroutines/Flow · Room · Paging 3
-Navigation Compose · Media3 (ExoPlayer + Session) · Coil 3 · DataStore
+Navigation Compose · Media3 (ExoPlayer + Session) · Coil 3 · DataStore · Haze (blur)
 Ktor server (CIO, Phase 2) · Ktor client (Phase 2) · NsdManager (Phase 2)
 Timber · minSdk 26 · compileSdk/targetSdk 37
 
@@ -986,18 +986,35 @@ sending library artist names to a third-party service.
   comparison specifically so every single fetch stays an individual,
   visible, undo-free user action.
 
-## Bottom nav bar — translucent, but only partway — 2026-09-22
+## Bottom nav bar — floating glass island — 2026-09-22/23
 
-`NavigationBar`'s `containerColor` is now `surfaceContainer` at 85% alpha,
-for visual interest against the system nav/gesture area on edge-to-edge
-devices. **Deliberately not the full "content scrolls visibly behind a
-see-through bar" effect** shown in the mockup comparison — that needs every
-top-level screen's list to stop respecting the outer `Scaffold`'s bottom
-inset and instead take a matching `contentPadding` so the last item stays
-reachable, which is a real structural change touching all 5 top-level
-screens (Tracks/Artists/Albums/Folders/Playlists), not a color tweak. Raised
-with the user as a bigger follow-up rather than done as part of this ask;
-not started.
+Replaced the stock `NavigationBar` (first pass was just an 85%-alpha
+`surfaceContainer`; user wanted "more transparent, more shine/uniqueness").
+Built from the "Spindle bottom bar concepts" mockup canvas — the shipped
+version combines all three concepts: floating island (B), a glowing line over
+the active tab (C), and a real frosted blur (A).
+
+- **`FloatingNavBar`** (`ui/components/FloatingNavBar.kt`): a rounded island
+  inset 12dp from the screen edges; only the active tab shows its label,
+  inside a tinted pill; a short `setShadowLayer` glow line on the island's top
+  edge marks it too. The mini-player is a matching floating glass card above it.
+- **Blur via Haze** (`dev.chrisbanes.haze:haze`, new dependency, 1.7.2):
+  `hazeSource` on the `NavHost`, `hazeEffect` through `Modifier.glassSurface()`
+  on the island and the mini-player. Real blur needs API 31+; below that
+  Haze falls back to a near-opaque tint (`spindleGlassStyle().fallbackTint`).
+- **Content scrolls visibly behind the overlay**: the `NavHost` no longer
+  takes the Scaffold's bottom inset; instead every scrolling screen adds
+  `LocalBottomOverlayPadding.current` as bottom `contentPadding` (the Tracks
+  fast-scroll rail too) so its last row stays reachable. Any new list screen
+  must do the same.
+- **Don't animate the active label's width.** The first version used
+  `AnimatedVisibility(expandHorizontally() + fadeIn())`; that relayouts the
+  island every frame and made tab switches measurably janky on the A73 (90th
+  percentile frame 13–22ms vs. 7–9ms on the old bar; fade-only still spiked
+  to ~22ms at the 95th). The label now appears instantly; pill color, icon
+  tint and glow alpha still animate. Measured by tapping through all 5 tabs
+  with `dumpsys gfxinfo` reset/dump, 3 rounds after a warm-up. The blur
+  itself only costs ~2ms/frame (GPU percentiles unchanged).
 
 ## Library scanning — folder exclusion (not in the original plan, now permanent)
 

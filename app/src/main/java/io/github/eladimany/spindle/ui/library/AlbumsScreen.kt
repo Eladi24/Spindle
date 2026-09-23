@@ -25,6 +25,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import io.github.eladimany.spindle.ui.components.AlbumArtwork
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 
 @Composable
 fun AlbumsScreen(
@@ -51,7 +52,7 @@ fun AlbumsScreen(
         LazyVerticalGrid(
             columns = GridCells.Adaptive(minSize = 140.dp),
             modifier = Modifier.padding(innerPadding).fillMaxSize(),
-            contentPadding = PaddingValues(8.dp),
+            contentPadding = PaddingValues(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 8.dp + LocalBottomOverlayPadding.current),
         ) {
             items(count = albums.itemCount, key = albums.itemKey { it.id }) { index ->
                 val album = albums[index] ?: return@items

@@ -3,6 +3,7 @@ package io.github.eladimany.spindle.ui.search
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +40,7 @@ import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Artist
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.ui.components.AlbumArtwork
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 
@@ -90,7 +92,7 @@ fun SearchScreen(
     ) { innerPadding ->
         when {
             query.isBlank() -> Box(
-                modifier = Modifier.padding(innerPadding).fillMaxSize(),
+                modifier = Modifier.padding(innerPadding).fillMaxSize().padding(bottom = LocalBottomOverlayPadding.current),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -100,7 +102,7 @@ fun SearchScreen(
                 )
             }
             results.isEmpty -> Box(
-                modifier = Modifier.padding(innerPadding).fillMaxSize(),
+                modifier = Modifier.padding(innerPadding).fillMaxSize().padding(bottom = LocalBottomOverlayPadding.current),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -109,7 +111,10 @@ fun SearchScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            else -> LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+            else -> LazyColumn(
+                modifier = Modifier.padding(innerPadding).fillMaxSize(),
+                contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+            ) {
                 if (results.artists.isNotEmpty()) {
                     item { SectionHeader("Artists") }
                     items(results.artists, key = { "artist${it.id}" }) { artist ->

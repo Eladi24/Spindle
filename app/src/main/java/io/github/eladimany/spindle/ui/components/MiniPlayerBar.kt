@@ -29,6 +29,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
@@ -51,6 +52,7 @@ fun MiniPlayerBar(
     fetchArtworkUri: suspend (Track) -> String?,
     nextTrack: Track? = null,
     previousTrack: Track? = null,
+    modifier: Modifier = Modifier,
 ) {
     val item = when (playbackState) {
         is PlaybackState.Playing -> playbackState.item
@@ -88,7 +90,13 @@ fun MiniPlayerBar(
     }
     val direction = sign(dragOffsetPx)
 
-    Surface(tonalElevation = 4.dp) {
+    // Transparent: the container (shape, blur, edge) comes from the caller's modifier —
+    // AppNavHost floats this as a frosted-glass card over the content.
+    Surface(
+        modifier = modifier,
+        color = Color.Transparent,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -127,7 +135,7 @@ fun MiniPlayerBar(
                         }
                     },
                 )
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             TrackArtwork(

@@ -2,6 +2,7 @@ package io.github.eladimany.spindle.ui.library
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 
 @Composable
 fun FolderBrowseScreen(
@@ -50,7 +52,10 @@ fun FolderBrowseScreen(
             )
         },
     ) { innerPadding ->
-        LazyColumn(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.padding(innerPadding).fillMaxSize(),
+            contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+        ) {
             items(folders, key = { it.id }) { folder ->
                 Column(
                     modifier = Modifier
