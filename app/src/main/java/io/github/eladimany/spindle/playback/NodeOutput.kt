@@ -11,6 +11,7 @@ import io.github.eladimany.spindle.core.model.OutputCapabilities
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.QueueItem
 import io.github.eladimany.spindle.data.bluos.BluOsClient
+import io.github.eladimany.spindle.data.bluos.BluOsDiscovery
 import io.github.eladimany.spindle.data.bluos.BluOsStatus
 import io.github.eladimany.spindle.data.bluos.IcyName
 import io.github.eladimany.spindle.data.bluos.NodeOwnership
@@ -19,6 +20,7 @@ import io.github.eladimany.spindle.data.server.MediaHttpServer
 import io.github.eladimany.spindle.data.server.NetworkAddress
 import io.github.eladimany.spindle.data.server.ServerAddress
 import io.github.eladimany.spindle.data.server.TokenRegistry
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -27,10 +29,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -39,6 +43,13 @@ import javax.inject.Singleton
 
 private const val LONG_POLL_TIMEOUT_SECONDS = 90
 private const val RETRY_DELAY_MS = 5_000L
+private const val MAX_RETRY_DELAY_MS = 30_000L
+/** Consecutive failed /SyncStatus polls before the Node counts as unreachable. */
+private const val OUTAGE_AFTER_FAILURES = 2
+private const val REDISCOVERY_WINDOW_MS = 60_000L
+private const val REDISCOVERY_PAUSE_MS = 60_000L
+/** After this long unreachable, stop auto-resuming and show Paused (releases the streaming locks). */
+private const val OUTAGE_GIVE_UP_MS = 10 * 60_000L
 private const val TAKEOVER_GRACE_MS = 10_000L
 /** A mid-track "stop" this recent is assumed to be the IP change killing the stream, not a user. */
 private const val IP_CHANGE_STOP_WINDOW_MS = 15_000L
@@ -47,11 +58,14 @@ private const val IP_CHANGE_STOP_WINDOW_MS = 15_000L
  * [AudioOutput] backed by a BluOS Node: serves the current track over
  * [MediaHttpServer] and drives it with [BluOsClient]'s `/Play?url=`
  * mechanism — the app owns the queue, the Node just decodes (hard
- * constraint #5, see CLAUDE.md). **Not yet wired into [PlaybackController]
- * or exercised against a real Node** — that's the output-switcher task,
- * which also needs to add [connect] as an explicit user action (there's no
- * such concept in the [AudioOutput] interface, which only knows "the
- * current output", not "which Node").
+ * constraint #5, see CLAUDE.md). [connect]/[disconnect] are driven by
+ * [AudioOutputSwitcher]; the [AudioOutput] interface itself has no notion
+ * of "which Node".
+ *
+ * **Never throws from an [AudioOutput] call** — a Node that's rebooting, off,
+ * or at a new IP must not crash the app (it did: pause with the Node gone
+ * crashed [PlaybackController]'s scope). Failures go through [nodeCommand]
+ * into outage handling instead — see [enterOutage].
  *
  * All mutable state here (`currentItem`, `lastEtag`, the last-known
  * `secs`/`totlen`) is only ever touched from [scope], a single
@@ -63,6 +77,7 @@ private const val IP_CHANGE_STOP_WINDOW_MS = 15_000L
 @Singleton
 class NodeOutput @Inject constructor(
     private val bluOsClient: BluOsClient,
+    private val discovery: BluOsDiscovery,
     private val mediaHttpServer: MediaHttpServer,
     private val tokenRegistry: TokenRegistry,
     private val streamingLocks: NodeStreamingLocks,
@@ -100,6 +115,18 @@ class NodeOutput @Inject constructor(
     // One network change fires several callbacks, and the rebind suspends —
     // without this, two of them could both see the old address and both restart.
     private val serverMutex = Mutex()
+
+    // Node reachability. While outage != null the Node isn't answering: status is
+    // ignored, rediscovery looks for it at a new IP (matched by MAC from
+    // /SyncStatus, else name), and once it answers recoverFromOutage() replays the
+    // resume point unless the Node is still playing our stream.
+    private class Outage(val resumeItem: QueueItem?, val resumeSeconds: Int)
+    private var outage: Outage? = null
+    private var syncFailures = 0
+    private var nodeMac: String? = null
+    private var nodeName: String? = null
+    private var rediscoveryJob: Job? = null
+    private var recoveryJob: Job? = null
 
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     override val state: StateFlow<PlaybackState> = _state.asStateFlow()
@@ -146,6 +173,14 @@ class NodeOutput @Inject constructor(
 
     fun disconnect() {
         unregisterNetworkCallback()
+        rediscoveryJob?.cancel()
+        rediscoveryJob = null
+        recoveryJob?.cancel()
+        recoveryJob = null
+        outage = null
+        syncFailures = 0
+        nodeMac = null
+        nodeName = null
         statusJob?.cancel()
         statusJob = null
         syncStatusJob?.cancel()
@@ -168,12 +203,16 @@ class NodeOutput @Inject constructor(
     }
 
     override suspend fun play(item: QueueItem) {
-        val target = player ?: return
-        if (serverAddress == null) return
+        playInternal(item)
+    }
+
+    /** Returns false if the Node couldn't be reached (already handed to outage handling). */
+    private suspend fun playInternal(item: QueueItem, resumeSeconds: Int = 0): Boolean {
+        if (player == null || serverAddress == null) return false
         // Cheap re-check so a track change never builds a URL on a stale address,
         // even if the network callback hasn't fired yet.
         moveServerToCurrentAddress()
-        val address = serverAddress ?: return
+        val address = serverAddress ?: return false
         currentItem = item
         lastKnownSecs = 0
         lastKnownTotalSeconds = null
@@ -187,13 +226,22 @@ class NodeOutput @Inject constructor(
         takenOver = false
         reloadOnResume = false
         stoppedMidTrackAtMs = null
-        bluOsClient.playUrl(target, address.urlFor(token))
+        if (outage != null) {
+            // Node known unreachable — don't wait out a timeout; resume here on recovery.
+            outage = Outage(item, resumeSeconds)
+            return false
+        }
+        val url = address.urlFor(token)
+        if (!nodeCommand("play", Outage(item, resumeSeconds)) { bluOsClient.playUrl(it, url) }) return false
         ensureStatusLoop()
+        return true
     }
 
     override suspend fun pause() {
         if (takenOver) return // Already not ours — don't pause someone else's music.
-        player?.let { bluOsClient.pause(it) }
+        if (outage == null && nodeCommand("pause") { bluOsClient.pause(it) }) return
+        // Node unreachable: honour the pause here, so nothing auto-resumes when it's back.
+        pauseAtResumePoint()
     }
 
     override suspend fun resume() {
@@ -202,11 +250,12 @@ class NodeOutput @Inject constructor(
             currentItem?.let { replayAt(it, lastKnownSecs) }
             return
         }
-        player?.let { bluOsClient.resume(it) }
+        nodeCommand("resume") { bluOsClient.resume(it) }
     }
 
     override suspend fun stop() {
-        if (!takenOver) player?.let { bluOsClient.stop(it) }
+        if (!takenOver && outage == null) nodeCommand("stop") { bluOsClient.stop(it) }
+        if (outage != null) outage = Outage(null, 0) // Stopped: nothing to resume on recovery.
         takenOver = false
         currentItem = null
         _state.value = PlaybackState.Idle
@@ -221,15 +270,46 @@ class NodeOutput @Inject constructor(
             _state.value = PlaybackState.Paused(item, seconds * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
             return
         }
-        player?.let { bluOsClient.seek(it, seconds) }
+        // Unreachable: just move the resume point rather than wait out a timeout.
+        outage?.resumeItem?.let {
+            outage = Outage(it, seconds)
+            return
+        }
+        nodeCommand("seek") { bluOsClient.seek(it, seconds) }
     }
 
     override suspend fun setVolume(percent: Int) {
-        val target = player ?: return
         val clamped = percent.coerceIn(0, 100)
-        bluOsClient.setVolume(target, clamped)
-        _volume.value = clamped
+        if (nodeCommand("volume") { bluOsClient.setVolume(it, clamped) }) _volume.value = clamped
     }
+
+    /**
+     * Runs one Node command. A failure is logged and treated as the Node being
+     * unreachable — never thrown. [resumePoint] overrides what [enterOutage] would
+     * infer from the current state (play() knows the intended item/position while
+     * state only says Buffering).
+     */
+    private suspend fun nodeCommand(
+        what: String,
+        resumePoint: Outage? = null,
+        block: suspend (BluOsPlayer) -> Unit,
+    ): Boolean {
+        val target = player ?: return false
+        return try {
+            block(target)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Timber.w(e, "BluOS %s failed", what)
+            enterOutage(resumePoint)
+            false
+        }
+    }
+
+    /** 5 s, 10 s, 20 s, then 30 s between attempts. */
+    private fun retryDelayMs(failures: Int): Long =
+        (RETRY_DELAY_MS shl (failures - 1).coerceIn(0, 3)).coerceAtMost(MAX_RETRY_DELAY_MS)
 
     private fun ensureStatusLoop() {
         if (statusJob?.isActive == true) return
@@ -237,16 +317,25 @@ class NodeOutput @Inject constructor(
     }
 
     private suspend fun statusLoop() {
+        var failures = 0
         while (true) {
             val target = player ?: return
             val status = try {
                 bluOsClient.status(target, timeoutSeconds = LONG_POLL_TIMEOUT_SECONDS, etag = lastEtag)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.w(e, "BluOS status long-poll failed")
-                delay(RETRY_DELAY_MS)
+                // Declaring an outage is the /SyncStatus loop's job (it always runs); this just backs off.
+                delay(retryDelayMs(++failures))
                 continue
             }
+            failures = 0
             lastEtag = status.etag
+            if (outage != null) {
+                onNodeReachable()
+                continue // recoverFromOutage decides what the Node's state means now.
+            }
             applyStatus(status)
         }
     }
@@ -261,15 +350,161 @@ class NodeOutput @Inject constructor(
             val target = player ?: return
             val sync = try {
                 bluOsClient.syncStatus(target, timeoutSeconds = LONG_POLL_TIMEOUT_SECONDS, etag = lastSyncEtag)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Timber.w(e, "BluOS sync-status long-poll failed")
-                delay(RETRY_DELAY_MS)
+                if (++syncFailures >= OUTAGE_AFTER_FAILURES) enterOutage()
+                delay(retryDelayMs(syncFailures))
                 continue
             }
+            syncFailures = 0
             lastSyncEtag = sync.etag
             sync.volume?.let { _volume.value = it }
+            sync.mac?.let { nodeMac = it }
+            sync.name?.let { nodeName = it }
+            onNodeReachable()
         }
     }
+
+    /**
+     * The Node stopped answering. Remembers what to resume ([resumePoint], or from
+     * state: Playing → interpolated position, Buffering → its item from 0, else
+     * nothing), shows Buffering meanwhile, and starts looking for the Node at a new
+     * address. Called from failed commands and from the /SyncStatus loop.
+     */
+    private fun enterOutage(resumePoint: Outage? = null) {
+        if (outage != null) {
+            if (resumePoint != null) outage = resumePoint
+            return
+        }
+        val state = _state.value
+        val pending = resumePoint ?: when (state) {
+            is PlaybackState.Playing -> Outage(state.item, (interpolatedPositionMs(state) / 1000).toInt())
+            is PlaybackState.Buffering -> Outage(state.item, 0)
+            else -> Outage(null, 0)
+        }
+        outage = pending
+        Timber.i("Node unreachable — waiting for it (resume=%s)", pending.resumeItem?.track?.title)
+        if (pending.resumeItem != null && !takenOver) _state.value = PlaybackState.Buffering(pending.resumeItem)
+        if (state is PlaybackState.Paused) reloadOnResume = true // It may come back rebooted.
+        startRediscovery()
+    }
+
+    private fun onNodeReachable() {
+        if (outage == null || recoveryJob?.isActive == true) return
+        recoveryJob = scope.launch { recoverFromOutage() }
+    }
+
+    private suspend fun recoverFromOutage() {
+        val target = player ?: return
+        val pending = outage ?: return
+        // One immediate (non-long-poll) status: did our stream survive the outage?
+        val status = try {
+            bluOsClient.status(target)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return // Still flaky — the next successful poll tries again.
+        }
+        rediscoveryJob?.cancel()
+        rediscoveryJob = null
+        outage = null
+        syncFailures = 0
+        val token = currentToken
+        val stillOurs = token != null && status.state == "stream" &&
+            NodeOwnership.classify(status, token, seenOurs = true, msSincePlay = 0) == NodeOwnership.Verdict.OURS
+        val item = pending.resumeItem
+        Timber.i("Node reachable again (ourStreamSurvived=%s, resume=%s)", stillOurs, item?.track?.title)
+        if (!stillOurs && item != null && !takenOver) replayAt(item, pending.resumeSeconds) else applyStatus(status)
+    }
+
+    /**
+     * While unreachable, browse for BluOS players and adopt one that is the same
+     * physical Node (MAC, else name) at a different address. Discovery needs
+     * NEARBY_WIFI_DEVICES on 33+; without it this finds nothing and the loops just
+     * keep retrying the old address.
+     */
+    private fun startRediscovery() {
+        if (rediscoveryJob?.isActive == true) return
+        val startedAtMs = SystemClock.elapsedRealtime()
+        rediscoveryJob = scope.launch {
+            // Bounded, for battery: discovery (with its multicast lock) in windows,
+            // and after OUTAGE_GIVE_UP_MS stop auto-resuming — see pauseAtResumePoint.
+            while (outage != null) {
+                if (SystemClock.elapsedRealtime() - startedAtMs >= OUTAGE_GIVE_UP_MS) {
+                    Timber.i("Node still unreachable after %d min — pausing", OUTAGE_GIVE_UP_MS / 60_000)
+                    pauseAtResumePoint()
+                    return@launch
+                }
+                val match = withTimeoutOrNull(REDISCOVERY_WINDOW_MS) {
+                    var same: BluOsPlayer? = null
+                    // firstOrNull, not first: the flow completes at once without the permission.
+                    discovery.discover().firstOrNull { found ->
+                        same = findSameNodeElsewhere(found)
+                        same != null
+                    }
+                    same
+                }
+                if (match != null) {
+                    adoptAddress(match)
+                    return@launch
+                }
+                delay(REDISCOVERY_PAUSE_MS)
+            }
+        }
+    }
+
+    private suspend fun findSameNodeElsewhere(found: List<BluOsPlayer>): BluOsPlayer? {
+        val current = player ?: return null
+        return found.firstOrNull { candidate ->
+            (candidate.host != current.host || candidate.port != current.port) && isSameNode(candidate)
+        }
+    }
+
+    private fun adoptAddress(found: BluOsPlayer) {
+        val current = player ?: return
+        Timber.i("Node found at %s:%d (was %s:%d)", found.host, found.port, current.host, current.port)
+        player = current.copy(host = found.host, port = found.port)
+        // Restart both loops on the new address now rather than after their backoff;
+        // the first successful poll triggers recoverFromOutage.
+        lastEtag = null
+        lastSyncEtag = null
+        statusJob?.cancel()
+        syncStatusJob?.cancel()
+        ensureSyncStatusLoop()
+        if (currentItem != null) ensureStatusLoop()
+    }
+
+    /**
+     * During an outage, turn "resume when the Node is back" into a plain Paused at
+     * the resume point — for a user pause, and for a long outage (Buffering holds
+     * the WiFi/CPU locks, and music shouldn't blast whenever the Node reappears
+     * hours later). Play then replays from there. The poll loops keep retrying.
+     */
+    private fun pauseAtResumePoint() {
+        val pending = outage ?: return
+        val item = pending.resumeItem ?: return
+        outage = Outage(null, 0)
+        lastKnownSecs = pending.resumeSeconds
+        reloadOnResume = true
+        _state.value = PlaybackState.Paused(item, pending.resumeSeconds * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
+    }
+
+    private suspend fun isSameNode(candidate: BluOsPlayer): Boolean {
+        val sync = try {
+            bluOsClient.syncStatus(candidate)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return false
+        }
+        val mac = nodeMac
+        return if (mac != null) sync.mac.equals(mac, ignoreCase = true) else sync.name != null && sync.name == nodeName
+    }
+
+    private fun interpolatedPositionMs(state: PlaybackState.Playing): Long =
+        (state.positionMs + (System.currentTimeMillis() - state.capturedAtMs)).coerceIn(0, state.durationMs.coerceAtLeast(0))
 
     private fun applyStatus(status: BluOsStatus) {
         val item = currentItem ?: return
@@ -317,8 +552,7 @@ class NodeOutput @Inject constructor(
     }
 
     private suspend fun replayAt(item: QueueItem, seconds: Int) {
-        play(item)
-        if (seconds > 1) seek(seconds)
+        if (playInternal(item, seconds) && seconds > 1) seek(seconds)
     }
 
     /**
@@ -381,10 +615,7 @@ class NodeOutput @Inject constructor(
         val item = currentItem ?: return
         if (takenOver) return // resume() replays anyway, on the new address.
         when (val state = _state.value) {
-            is PlaybackState.Playing -> {
-                val positionMs = state.positionMs + (System.currentTimeMillis() - state.capturedAtMs)
-                replayAt(item, (positionMs.coerceIn(0, state.durationMs.coerceAtLeast(0)) / 1000).toInt())
-            }
+            is PlaybackState.Playing -> replayAt(item, (interpolatedPositionMs(state) / 1000).toInt())
             is PlaybackState.Buffering -> replayAt(item, 0)
             is PlaybackState.Idle -> {
                 val stoppedAt = stoppedMidTrackAtMs

@@ -107,6 +107,7 @@ class BluOsXmlParserTest {
         assertEquals("66", sync.etag)
         assertEquals(100, sync.volume)
         assertEquals("Living Room HI-Fi", sync.name)
+        assertEquals("90:56:82:98:B4:42", sync.mac)
     }
 
     @Test

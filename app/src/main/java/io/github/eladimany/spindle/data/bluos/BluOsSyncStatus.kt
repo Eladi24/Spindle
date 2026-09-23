@@ -14,12 +14,14 @@ package io.github.eladimany.spindle.data.bluos
  * ```
  *
  * Unlike `/Status`, every field here is a root-element **attribute**, not a
- * child element. Only `etag`/`volume`/`name` are modeled — the rest
- * (`model`, `mac`, grouping via `pairWithSub`, ...) exist in the real
+ * child element. Only `etag`/`volume`/`name`/`mac` are modeled — the rest
+ * (`model`, grouping via `pairWithSub`, ...) exist in the real
  * response but aren't needed yet; add them here, verified, when they are.
  */
 data class BluOsSyncStatus(
     val etag: String?,
     val volume: Int?,
     val name: String?,
+    /** Stable player identity — how `NodeOutput` recognizes the same Node at a new IP. */
+    val mac: String? = null,
 )

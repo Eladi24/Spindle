@@ -1021,6 +1021,49 @@ server stopped listening** (local 500 ms socket connect to its own port).
   + wake lock are held while streaming and released after.
 - Not testable here without root: an actual *different* IP (DHCP decides).
 
+### Node unreachable / reconnection — 2026-09-23
+
+- **Crash fixed first:** `BluOsClient` throws on any network failure, and
+  `PlaybackController` calls outputs inside `scope.launch` with no handler — so
+  pressing pause with the Node gone **crashed the app** (reproduced on the A73:
+  `ConnectException` on main). Every Node call in `NodeOutput` now goes through
+  `nodeCommand()`, which logs and enters outage handling instead of throwing.
+  **Rule: no `AudioOutput` method may throw.**
+- **Outage** (`enterOutage`): entered on any failed command, or 2 consecutive
+  failed `/SyncStatus` polls (that loop always runs while connected, so it's the
+  watchdog; the `/Status` loop only backs off). Records a resume point — Playing
+  → interpolated position, Buffering → its item from 0 — and shows Buffering.
+  Retry backoff is now 5/10/20/30 s (was a flat 5 s) for both loops.
+- While in outage: `/Status` results are not applied; `play()` just updates the
+  resume point (no waiting out a timeout); `seek()` moves it; `stop()` clears it;
+  **`pause()` turns it into a plain Paused** — a user pause must not auto-resume
+  when the Node returns (`pauseAtResumePoint`).
+- **Recovery** (`recoverFromOutage`, on the first successful poll): one immediate
+  `/Status`; if it's still our token streaming → just continue, else replay the
+  resume point (play + seek).
+- **Rediscovery at a new IP:** `BluOsDiscovery` (NSD) in 60 s windows with 60 s
+  gaps while in outage; a candidate at a different address is the same Node if its
+  `/SyncStatus` `mac` matches (`BluOsSyncStatus.mac` — verified in the captured
+  real XML), else the same `name`. Adopting it restarts both loops at once. Needs
+  `NEARBY_WIFI_DEVICES` on 33+; without it, rediscovery finds nothing and the loops
+  keep retrying the old address.
+- **Give-up after 10 min** (`OUTAGE_GIVE_UP_MS`): stop rediscovery and turn the
+  pending resume into Paused — Buffering holds the WiFi/CPU locks, and music
+  shouldn't start by itself hours later. Play replays from the resume point.
+- Known gap: after adopting a new address, `AudioOutputSwitcher.target` still
+  holds the old `BluOsPlayer` (same name, old host) — cosmetic unless the picker
+  compares hosts.
+- **Tested on the A73 against the fake Node:** (A) Node gone + pause → no crash,
+  Paused at 0:23. (B) play while gone, fake Node restarted fresh (= rebooted) →
+  "reachable again (ourStreamSurvived=false)", `/Play?url=` + `seek=23`, playing
+  again. (C) ~20 s blip with the stream intact → outage detected in ~6 s,
+  recovered with **no** new `/Play`, playback continued.
+- Not testable with the fake Node: NSD rediscovery (mDNS doesn't cross
+  `adb reverse`) — on the real-Node checklist.
+
+Testing tip: `adb shell svc power stayon usb` keeps the screen from locking
+mid-test (restore with `svc power stayon false`; the user's value was 0).
+
 ### Pending verification at the Node (do together when the user is there)
 - [ ] Normal Node playback still reads as OURS: plays past 10 s, auto-advances,
       pause/resume work (also finally confirms `state == "pause"`).
@@ -1037,6 +1080,11 @@ server stopped listening** (local 500 ms socket connect to its own port).
       if both reach the Node) → server rebinds, Node resumes at ~same position.
 - [ ] WiFi off/on mid-track with the real Node → resumes (fake-Node-verified;
       confirms the real Node reports "stop" and the 15 s window catches it).
+- [ ] Unplug the Node's power mid-track, plug back in → Spindle shows buffering,
+      then resumes at ~same position once the Node boots (fake-Node-verified).
+- [ ] Node gets a new IP (e.g. reserve a different DHCP address in the router, or
+      reboot router) → rediscovery finds it by MAC and resumes. Watch logcat for
+      "Node found at".
 
 ## Artist artwork — Deezer, opt-in per artist — 2026-09-22
 

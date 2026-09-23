@@ -33,6 +33,7 @@ object BluOsXmlParser {
             etag = root.getAttribute("etag").ifBlank { null },
             volume = root.getAttribute("volume").toIntOrNull(),
             name = root.getAttribute("name").ifBlank { null },
+            mac = root.getAttribute("mac").ifBlank { null },
         )
     }
 
