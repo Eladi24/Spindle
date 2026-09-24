@@ -51,6 +51,12 @@ private const val REDISCOVERY_PAUSE_MS = 60_000L
 /** After this long unreachable, stop auto-resuming and show Paused (releases the streaming locks). */
 private const val OUTAGE_GIVE_UP_MS = 10 * 60_000L
 private const val TAKEOVER_GRACE_MS = 10_000L
+/** How long the UI keeps showing a seek's target while the Node's reported secs catch up. */
+private const val SEEK_SETTLE_MS = 8_000L
+/** Measured: the Node lands ~+2 s past a requested seek (bluos-api.md). */
+private const val SEEK_LANDING_SLACK_SECONDS = 5
+/** A held seek is dropped if the Node hasn't reported canSeek=1 this long after /Play. */
+private const val PENDING_SEEK_TIMEOUT_MS = 6_000L
 /** A mid-track "stop" this recent is assumed to be the IP change killing the stream, not a user. */
 private const val IP_CHANGE_STOP_WINDOW_MS = 15_000L
 
@@ -103,6 +109,17 @@ class NodeOutput @Inject constructor(
     private var playStartedAtMs = 0L
     private var seenOurs = false
     private var takenOver = false
+
+    // Seek sync. A /Play?seek sent right after /Play?url — before the Node reports
+    // our stream with canSeek=1 — is the likely cause of a real glitch (user,
+    // 2026-09-23: garbled noise on switching to the Node, then playback from 0:00
+    // while the app showed +8 s). So a seek before the stream is seekable is held
+    // in pendingSeekSeconds and sent from applyStatus; after any seek, the UI keeps
+    // showing seekTarget until the Node's secs land near it (or SEEK_SETTLE_MS).
+    private var streamCanSeek = false
+    private var pendingSeekSeconds: Int? = null
+    private var seekTarget: Int? = null
+    private var seekIssuedAtMs = 0L
 
     // Phone IP change / WiFi drop recovery: the server is bound to one WLAN address,
     // so a new address (or a dead listen socket) means restart it and re-issue the
@@ -197,9 +214,16 @@ class NodeOutput @Inject constructor(
         currentToken = null
         seenOurs = false
         takenOver = false
+        resetSeekSync()
         reloadOnResume = false
         stoppedMidTrackAtMs = null
         _state.value = PlaybackState.Idle
+    }
+
+    private fun resetSeekSync() {
+        streamCanSeek = false
+        pendingSeekSeconds = null
+        seekTarget = null
     }
 
     override suspend fun play(item: QueueItem) {
@@ -224,6 +248,7 @@ class NodeOutput @Inject constructor(
         playStartedAtMs = SystemClock.elapsedRealtime()
         seenOurs = false
         takenOver = false
+        resetSeekSync()
         reloadOnResume = false
         stoppedMidTrackAtMs = null
         if (outage != null) {
@@ -261,7 +286,11 @@ class NodeOutput @Inject constructor(
         _state.value = PlaybackState.Idle
     }
 
-    /** Only takes effect when the Node's own last-reported status had `canSeek=1`. */
+    /**
+     * The Node only honours `/Play?seek` once it reports our stream with
+     * `canSeek=1` — before that (right after `/Play?url`) the seek is held and sent
+     * by [applyStatus], and the item shows as Buffering meanwhile.
+     */
     override suspend fun seek(seconds: Int) {
         if (takenOver) {
             // Don't seek their stream — just move where "take it back" will resume.
@@ -275,7 +304,30 @@ class NodeOutput @Inject constructor(
             outage = Outage(it, seconds)
             return
         }
-        nodeCommand("seek") { bluOsClient.seek(it, seconds) }
+        val item = currentItem ?: return
+        lastKnownSecs = seconds
+        if (!seenOurs || !streamCanSeek) {
+            Timber.d("Seek to %ds held until the Node's stream is seekable", seconds)
+            pendingSeekSeconds = seconds
+            seekTarget = null
+            _state.value = PlaybackState.Buffering(item)
+            return
+        }
+        sendSeek(item, seconds)
+    }
+
+    private suspend fun sendSeek(item: QueueItem, seconds: Int) {
+        if (!nodeCommand("seek") { bluOsClient.seek(it, seconds) }) return
+        seekTarget = seconds
+        seekIssuedAtMs = System.currentTimeMillis()
+        // Show the target at once (the seek bar would otherwise snap back to the
+        // Node's pre-seek secs until the next status); paused stays paused.
+        val durationMs = (lastKnownTotalSeconds ?: 0) * 1000L
+        _state.value = if (_state.value is PlaybackState.Paused) {
+            PlaybackState.Paused(item, seconds * 1000L, durationMs)
+        } else {
+            PlaybackState.Playing(item, seconds * 1000L, durationMs, seekIssuedAtMs)
+        }
     }
 
     override suspend fun setVolume(percent: Int) {
@@ -506,7 +558,7 @@ class NodeOutput @Inject constructor(
     private fun interpolatedPositionMs(state: PlaybackState.Playing): Long =
         (state.positionMs + (System.currentTimeMillis() - state.capturedAtMs)).coerceIn(0, state.durationMs.coerceAtLeast(0))
 
-    private fun applyStatus(status: BluOsStatus) {
+    private suspend fun applyStatus(status: BluOsStatus) {
         val item = currentItem ?: return
         val token = currentToken ?: return
         if (takenOver) return
@@ -523,9 +575,33 @@ class NodeOutput @Inject constructor(
             status.state == "stream" -> {
                 // UNKNOWN here = a foreign stream inside the post-/Play grace window; not ours to display.
                 if (verdict != NodeOwnership.Verdict.OURS) return
-                lastKnownSecs = status.secs
+                streamCanSeek = status.canSeek
                 lastKnownTotalSeconds = status.totalSeconds
-                _state.value = PlaybackState.Playing(item, status.secs * 1000L, (status.totalSeconds ?: 0) * 1000L)
+                val durationMs = (status.totalSeconds ?: 0) * 1000L
+                pendingSeekSeconds?.let { target ->
+                    if (status.canSeek) {
+                        pendingSeekSeconds = null
+                        Timber.d("Stream seekable — sending held seek to %ds", target)
+                        sendSeek(item, target)
+                        return
+                    }
+                    // Stay Buffering (not Playing from 0:00) until the held seek is sent —
+                    // unless this stream never becomes seekable; then follow the Node.
+                    if (msSincePlay < PENDING_SEEK_TIMEOUT_MS) return
+                    Timber.w("Node never reported canSeek=1 — dropping the seek to %ds", target)
+                    pendingSeekSeconds = null
+                }
+                seekTarget?.let { target ->
+                    // The Node lands ~2 s past the target (bluos-api.md); anything else
+                    // is a pre-seek status — keep showing the target until it settles.
+                    val landed = status.secs in (target - 1)..(target + SEEK_LANDING_SLACK_SECONDS)
+                    val expired = System.currentTimeMillis() - seekIssuedAtMs > SEEK_SETTLE_MS
+                    if (!landed && !expired) return
+                    if (!landed) Timber.w("Seek to %ds didn't land (Node at %ds) — trusting the Node", target, status.secs)
+                    seekTarget = null
+                }
+                lastKnownSecs = status.secs
+                _state.value = PlaybackState.Playing(item, status.secs * 1000L, durationMs)
             }
             // Unverified against real hardware — Phase 0 only ever observed
             // "stream"/"stop". Worst case if this guess is wrong: pausing

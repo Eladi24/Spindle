@@ -65,6 +65,9 @@ class MediaHttpServer @Inject constructor(
             get("/t/{token}") {
                 val token = call.parameters["token"]
                 val served = token?.let(tokenRegistry::resolve)
+                // Which byte ranges the Node asks for, and when — the evidence for seek
+                // glitches (e.g. overlapping requests right after /Play?url + seek).
+                Timber.d("GET /t/%s range=%s -> %s", token?.take(8), call.request.headers[HttpHeaders.Range], if (served == null) 404 else "serve")
                 if (served == null) {
                     call.respond(HttpStatusCode.NotFound)
                 } else {

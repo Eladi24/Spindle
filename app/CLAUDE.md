@@ -1064,27 +1064,33 @@ server stopped listening** (local 500 ms socket connect to its own port).
 Testing tip: `adb shell svc power stayon usb` keeps the screen from locking
 mid-test (restore with `svc power stayon false`; the user's value was 0).
 
-### Pending verification at the Node (do together when the user is there)
-- [ ] Normal Node playback still reads as OURS: plays past 10 s, auto-advances,
-      pause/resume work (also finally confirms `state == "pause"`).
-- [ ] Start something from the BluOS app mid-track → Spindle shows Paused, no
-      auto-advance, doesn't stop the other music. Press play in Spindle → Node
-      comes back to our track at about the same position.
-- [ ] Same with a physical input / Bluetooth to the Node (the `AudioInputs` path).
-- [ ] BluOS app "stop" mid-track → Spindle goes idle, no advance (unchanged path).
-- [ ] Locks: while streaming, `adb shell dumpsys power | grep Spindle` shows the
-      wake lock and `dumpsys wifi` the WifiLock; both gone after pause.
-- [ ] Screen off for a whole album on Node output (A73, then S25+): no stall
-      between or mid-track. (Overlaps Phase 3 item 5.)
-- [ ] Real IP change mid-track (e.g. move the phone between guest and main WiFi,
-      if both reach the Node) → server rebinds, Node resumes at ~same position.
-- [ ] WiFi off/on mid-track with the real Node → resumes (fake-Node-verified;
-      confirms the real Node reports "stop" and the 15 s window catches it).
-- [ ] Unplug the Node's power mid-track, plug back in → Spindle shows buffering,
-      then resumes at ~same position once the Node boots (fake-Node-verified).
-- [ ] Node gets a new IP (e.g. reserve a different DHCP address in the router, or
-      reboot router) → rediscovery finds it by MAC and resumes. Watch logcat for
-      "Node found at".
+### Seek sync on the Node — 2026-09-24
+
+User report (real Node, 2026-09-23): switching to the Node mid-song gave a
+garbled "alien" noise, then playback from 0:00 while the app showed +8 s.
+`AudioOutputSwitcher` (and every replay path) sends `/Play?url=` then
+`/Play?seek=` within milliseconds — but bluos-api.md says seek only works with
+`canSeek=1`, and Phase 0 only ever seeked an already-playing stream. Best
+explanation: the early seek made the Node fetch a second byte range mid-decode.
+**Not proven on hardware** — the Node test plan has the check.
+- `NodeOutput.seek()` now **holds** the seek (`pendingSeekSeconds`, state stays
+  Buffering) until a status shows our stream with `canSeek=1`, then sends it
+  from `applyStatus`. Dropped after 6 s (`PENDING_SEEK_TIMEOUT_MS`) if the stream
+  never becomes seekable — follow the Node rather than hang in Buffering.
+- After any seek, the UI shows the target (`seekTarget`) until the Node's `secs`
+  land within [target−1, target+5] (it lands ~+2 s) or 8 s pass — no snap back
+  to the pre-seek position. Seek while paused updates the Paused position.
+- `MediaHttpServer` logs every `GET /t/{token}` with its `Range` header — the
+  evidence to capture if the glitch recurs.
+- Remaining by design: ~1 s of the song's start may be heard before the seek
+  lands (no single-call play-at-offset in the documented API; trying
+  `/Play?url=…&seek=N` at the Node is listed as an experiment).
+
+### Verification at the Node
+
+**Full step-by-step plan: `docs/PHASE3-NODE-TESTS.md`** (setup, Logcat filter,
+expected log lines, how to change the phone's and the Node's IP). Run it when the
+user is at the Node; record results back here.
 
 ## Artist artwork — Deezer, opt-in per artist — 2026-09-22
 
