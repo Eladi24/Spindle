@@ -1086,6 +1086,38 @@ explanation: the early seek made the Node fetch a second byte range mid-decode.
   lands (no single-call play-at-offset in the documented API; trying
   `/Play?url=…&seek=N` at the Node is listed as an experiment).
 
+### Samsung battery guidance — 2026-09-24
+
+Item 6. From the "Spindle battery guidance" mockup canvas: the user picked A + B.
+- `BatteryGuidance` (data/prefs): `isUnrestricted()` =
+  `PowerManager.isIgnoringBatteryOptimizations` (One UI "Unrestricted" → true,
+  Optimized/Restricted → false; checked on the A73). The button opens
+  `ACTION_APPLICATION_DETAILS_SETTINGS` (App info → Battery). **Never
+  `ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`** — Play restricts it to a few app
+  kinds, not music players.
+- **B (one-time):** after the first successful switch to a Node while restricted,
+  the Play on sheet's content becomes `BatterySetupContent` (3 steps). The
+  `battery_setup_shown` DataStore flag is set when it shows. Coming back from
+  settings with Unrestricted set closes the sheet (`LifecycleResumeEffect` →
+  `refreshBatteryState`). Any dismissal ends the step (`finishBatterySetup`) —
+  the VM outlives the sheet, so a stale flag once made the sheet close itself on
+  reopen.
+- **A (persistent):** `BatteryWarningCard` after the Node list while target is a
+  Node and still restricted. "Not now" hides it until the next app start (in memory).
+- Amber caution colour is local to `BatteryGuidanceViews.kt` (darker in light theme).
+- **Fixed along the way (older bug):** `NowPlayingScreen` returned early while
+  nothing was loaded, and a switch passes through Idle — so `showOutputPicker`
+  reset and **every output switch closed the picker**. The picker state and sheet
+  now sit above that return. The sheet also opens fully expanded now (B's buttons
+  were below the fold half-expanded).
+- Verified on the A73 with the fake Node: B after the switch → Open settings →
+  App info → Battery → Unrestricted → back, and the sheet closes; A appears when
+  restricted, "Not now" hides it. Test tip: reset the flag by trimming
+  `files/datastore/settings.preferences_pb` via `run-as` (read it with `adb
+  exec-out`, not `adb shell` — the pty turns `\n` into `\r\n`).
+- Known gap: a Node connected by manual IP isn't listed as its own ACTIVE card
+  (only discovered players are), so card A sits alone in that case.
+
 ### Verification at the Node
 
 **Full step-by-step plan: `docs/PHASE3-NODE-TESTS.md`** (setup, Logcat filter,

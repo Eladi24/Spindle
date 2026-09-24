@@ -11,6 +11,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.BluOsPlayer
 import io.github.eladimany.spindle.data.bluos.BluOsDiscovery
+import io.github.eladimany.spindle.data.prefs.BatteryGuidance
+import io.github.eladimany.spindle.data.prefs.SettingsRepository
 import io.github.eladimany.spindle.playback.AudioOutputSwitcher
 import io.github.eladimany.spindle.playback.LocalAudioRoutes
 import io.github.eladimany.spindle.playback.LocalOutput
@@ -19,8 +21,12 @@ import io.github.eladimany.spindle.playback.LocalRouteKind
 import io.github.eladimany.spindle.playback.OutputTarget
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import javax.inject.Inject
@@ -31,6 +37,8 @@ class OutputPickerViewModel @Inject constructor(
     private val switcher: AudioOutputSwitcher,
     private val localOutput: LocalOutput,
     private val localAudioRoutes: LocalAudioRoutes,
+    private val batteryGuidance: BatteryGuidance,
+    private val settings: SettingsRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -51,6 +59,37 @@ class OutputPickerViewModel @Inject constructor(
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     private var discoveryJob: Job? = null
+
+    // Re-read on every resume (refreshBatteryState) — the user changes it in the
+    // system's App info page, and nothing notifies us when they come back.
+    private val _isUnrestricted = MutableStateFlow(batteryGuidance.isUnrestricted())
+    val isUnrestricted: StateFlow<Boolean> = _isUnrestricted.asStateFlow()
+
+    /** Card A: under the Node while it's active and Samsung may still put us to sleep. */
+    val showBatteryCard: StateFlow<Boolean> = combine(
+        target,
+        _isUnrestricted,
+        batteryGuidance.cardDismissed,
+    ) { target, unrestricted, dismissed ->
+        target is OutputTarget.Node && !unrestricted && !dismissed
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    /** Sheet B: replaces the picker's content once, right after the first switch to a Node. */
+    private val _showBatterySetup = MutableStateFlow(false)
+    val showBatterySetup: StateFlow<Boolean> = _showBatterySetup.asStateFlow()
+
+    fun refreshBatteryState() {
+        _isUnrestricted.value = batteryGuidance.isUnrestricted()
+    }
+
+    /** The sheet closed, however that happened — the setup step is one-shot, never shown again on reopen. */
+    fun finishBatterySetup() {
+        _showBatterySetup.value = false
+    }
+
+    fun dismissBatteryCard() = batteryGuidance.dismissCard()
+
+    fun batterySettingsIntent() = batteryGuidance.settingsIntent()
 
     /** Android 13+ gates NSD behind this — see the manifest and BluOsDiscovery for why nothing is needed pre-33. */
     fun hasNearbyWifiPermission(): Boolean {
@@ -111,6 +150,11 @@ class OutputPickerViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 switcher.switchTo(OutputTarget.Node(player))
+                refreshBatteryState()
+                if (!_isUnrestricted.value && !settings.batterySetupShown.first()) {
+                    settings.markBatterySetupShown()
+                    _showBatterySetup.value = true
+                }
             } catch (e: Exception) {
                 Timber.w(e, "Failed to switch to %s", player.name)
                 _errorMessage.value = "Couldn't connect to ${player.name}. Make sure you're both on the same WiFi network."

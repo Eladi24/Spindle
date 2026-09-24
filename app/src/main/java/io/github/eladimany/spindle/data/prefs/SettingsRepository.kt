@@ -3,6 +3,7 @@ package io.github.eladimany.spindle.data.prefs
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -22,6 +23,18 @@ class SettingsRepository @Inject constructor(
 
     val excludedFolderIds: Flow<Set<Long>> = context.dataStore.data.map { prefs ->
         prefs[excludedFolderIdsKey]?.mapNotNull { it.toLongOrNull() }?.toSet() ?: emptySet()
+    }
+
+    // The one-time "keep playing with the screen off" sheet, shown on the first
+    // switch to a Node while battery use is still restricted.
+    private val batterySetupShownKey = booleanPreferencesKey("battery_setup_shown")
+
+    val batterySetupShown: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[batterySetupShownKey] ?: false
+    }
+
+    suspend fun markBatterySetupShown() {
+        context.dataStore.edit { prefs -> prefs[batterySetupShownKey] = true }
     }
 
     suspend fun setFolderExcluded(folderId: Long, excluded: Boolean) {

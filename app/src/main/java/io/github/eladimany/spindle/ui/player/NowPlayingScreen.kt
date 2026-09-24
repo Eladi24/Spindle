@@ -99,6 +99,14 @@ fun NowPlayingScreen(
     val queueState by viewModel.queueState.collectAsStateWithLifecycle()
     val volume by viewModel.volume.collectAsStateWithLifecycle()
 
+    // Above the early return below: switching outputs passes through Idle for a
+    // moment, and state declared after the return would reset — closing the picker
+    // (and the battery setup step it shows right after a switch to the Node).
+    var showOutputPicker by remember { mutableStateOf(false) }
+    if (showOutputPicker) {
+        OutputPickerSheet(onDismiss = { showOutputPicker = false })
+    }
+
     val item = when (val s = playbackState) {
         is PlaybackState.Playing -> s.item
         is PlaybackState.Paused -> s.item
@@ -115,7 +123,6 @@ fun NowPlayingScreen(
     var displayPositionMs by remember { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
-    var showOutputPicker by remember { mutableStateOf(false) }
     val outputTarget by viewModel.outputTarget.collectAsStateWithLifecycle()
 
     LaunchedEffect(playbackState) {
@@ -344,9 +351,6 @@ fun NowPlayingScreen(
         AddToPlaylistSheet(trackIds = listOf(item.track.id), onDismiss = { showAddToPlaylist = false })
     }
 
-    if (showOutputPicker) {
-        OutputPickerSheet(onDismiss = { showOutputPicker = false })
-    }
 }
 
 @Composable

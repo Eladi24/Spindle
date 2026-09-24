@@ -31,8 +31,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,10 +43,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.BluOsPlayer
 import io.github.eladimany.spindle.playback.LocalRoute
@@ -85,131 +89,173 @@ fun OutputPickerSheet(
     var showManualEntry by remember { mutableStateOf(false) }
     var manualHost by remember { mutableStateOf("") }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, modifier = modifier) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 28.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Text("Play on", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(
-                "Choose where sound plays",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val showBatteryCard by viewModel.showBatteryCard.collectAsStateWithLifecycle()
+    val showBatterySetup by viewModel.showBatterySetup.collectAsStateWithLifecycle()
+    val isUnrestricted by viewModel.isUnrestricted.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val openBatterySettings = { context.startActivity(viewModel.batterySettingsIntent()) }
+    val dismiss = {
+        viewModel.finishBatterySetup()
+        onDismiss()
+    }
+
+    // Coming back from the App info page is the only signal that the setting changed.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshBatteryState()
+        onPauseOrDispose { }
+    }
+    // The setup sheet's job is done — close it rather than fall back to the picker.
+    LaunchedEffect(showBatterySetup, isUnrestricted) {
+        if (showBatterySetup && isUnrestricted) dismiss()
+    }
+
+    // Always fully open: half-expanded, the setup content's buttons sat below the
+    // fold, and a partial sheet whose content grows (setup replacing the picker as
+    // the manual-IP keyboard closes) was seen dismissing itself on the A73.
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    ModalBottomSheet(onDismissRequest = dismiss, modifier = modifier, sheetState = sheetState) {
+        if (showBatterySetup) {
+            BatterySetupContent(
+                nodeName = (target as? OutputTarget.Node)?.player?.name ?: "your Node",
+                onOpenSettings = openBatterySettings,
+                onLater = dismiss,
+                modifier = Modifier
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 28.dp),
             )
-
-            val speakerRoute = localRoutes.firstOrNull { it.kind == LocalRouteKind.SPEAKER }
-            val otherRoutes = localRoutes.filter { it.kind != LocalRouteKind.SPEAKER }
-
-            OutputCard(
-                icon = Icons.Default.Smartphone,
-                title = "This phone",
-                subtitle = "Built-in speaker",
-                // Also active before anything's ever been explicitly picked
-                // (preferredRouteId still null) — selectLocal() itself always
-                // pins the speaker from here on, so this only matters pre-pin.
-                isActive = target == OutputTarget.Local &&
-                    (preferredRouteId == null || preferredRouteId == speakerRoute?.id),
-                onClick = { viewModel.selectLocal() },
-            )
-
-            // Only worth showing when there's an actual choice beyond the
-            // speaker "This phone" already covers — a connected Bluetooth or
-            // wired device.
-            if (otherRoutes.isNotEmpty()) {
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Play on", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text(
-                    "OUTPUT DEVICE",
+                    "Choose where sound plays",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                val speakerRoute = localRoutes.firstOrNull { it.kind == LocalRouteKind.SPEAKER }
+                val otherRoutes = localRoutes.filter { it.kind != LocalRouteKind.SPEAKER }
+
+                OutputCard(
+                    icon = Icons.Default.Smartphone,
+                    title = "This phone",
+                    subtitle = "Built-in speaker",
+                    // Also active before anything's ever been explicitly picked
+                    // (preferredRouteId still null) — selectLocal() itself always
+                    // pins the speaker from here on, so this only matters pre-pin.
+                    isActive = target == OutputTarget.Local &&
+                        (preferredRouteId == null || preferredRouteId == speakerRoute?.id),
+                    onClick = { viewModel.selectLocal() },
+                )
+
+                // Only worth showing when there's an actual choice beyond the
+                // speaker "This phone" already covers — a connected Bluetooth or
+                // wired device.
+                if (otherRoutes.isNotEmpty()) {
+                    Text(
+                        "OUTPUT DEVICE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 0.8.sp,
+                    )
+                    otherRoutes.forEach { route ->
+                        OutputCard(
+                            icon = when (route.kind) {
+                                LocalRouteKind.SPEAKER -> Icons.Default.Speaker
+                                LocalRouteKind.BLUETOOTH -> Icons.Default.Bluetooth
+                                LocalRouteKind.WIRED -> Icons.Default.Headphones
+                            },
+                            title = viewModel.routeDisplayName(route),
+                            subtitle = when (route.kind) {
+                                LocalRouteKind.SPEAKER -> "Built-in"
+                                LocalRouteKind.BLUETOOTH -> "Bluetooth"
+                                LocalRouteKind.WIRED -> "Wired"
+                            },
+                            isActive = target == OutputTarget.Local && preferredRouteId == route.id,
+                            onClick = { viewModel.selectLocalRoute(route) },
+                        )
+                    }
+                    // Decoupled from the network permission card below — a device
+                    // can easily have granted that one already (e.g. an earlier
+                    // test session) without ever having been asked for this one,
+                    // since they're only ever requested together, gated on
+                    // whichever one happens to still be missing.
+                    if (!hasBluetoothConnectPermission && otherRoutes.any { it.kind == LocalRouteKind.BLUETOOTH }) {
+                        TextButton(
+                            onClick = { permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)) },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text("Show the Bluetooth device's real name")
+                        }
+                    }
+                }
+
+                Text(
+                    "ON YOUR NETWORK",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     letterSpacing = 0.8.sp,
                 )
-                otherRoutes.forEach { route ->
-                    OutputCard(
-                        icon = when (route.kind) {
-                            LocalRouteKind.SPEAKER -> Icons.Default.Speaker
-                            LocalRouteKind.BLUETOOTH -> Icons.Default.Bluetooth
-                            LocalRouteKind.WIRED -> Icons.Default.Headphones
+
+                if (!hasNearbyWifiPermission) {
+                    PermissionRequestCard(
+                        onGrant = {
+                            val permissions = buildList {
+                                add(Manifest.permission.NEARBY_WIFI_DEVICES)
+                                if (!hasBluetoothConnectPermission) add(Manifest.permission.BLUETOOTH_CONNECT)
+                            }
+                            permissionLauncher.launch(permissions.toTypedArray())
                         },
-                        title = viewModel.routeDisplayName(route),
-                        subtitle = when (route.kind) {
-                            LocalRouteKind.SPEAKER -> "Built-in"
-                            LocalRouteKind.BLUETOOTH -> "Bluetooth"
-                            LocalRouteKind.WIRED -> "Wired"
-                        },
-                        isActive = target == OutputTarget.Local && preferredRouteId == route.id,
-                        onClick = { viewModel.selectLocalRoute(route) },
                     )
-                }
-                // Decoupled from the network permission card below — a device
-                // can easily have granted that one already (e.g. an earlier
-                // test session) without ever having been asked for this one,
-                // since they're only ever requested together, gated on
-                // whichever one happens to still be missing.
-                if (!hasBluetoothConnectPermission && otherRoutes.any { it.kind == LocalRouteKind.BLUETOOTH }) {
-                    TextButton(
-                        onClick = { permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)) },
-                        contentPadding = PaddingValues(horizontal = 6.dp),
-                    ) {
-                        Text("Show the Bluetooth device's real name")
+                } else {
+                    players.forEach { player ->
+                        OutputCard(
+                            icon = Icons.Default.Cast,
+                            title = player.name,
+                            subtitle = "BluOS · on your network",
+                            isActive = (target as? OutputTarget.Node)?.player == player,
+                            onClick = { viewModel.selectNode(player) },
+                        )
                     }
+                    if (showBatteryCard) {
+                        BatteryWarningCard(
+                            onOpenSettings = openBatterySettings,
+                            onNotNow = viewModel::dismissBatteryCard,
+                        )
+                    }
+                    ScanningRow()
                 }
-            }
 
-            Text(
-                "ON YOUR NETWORK",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                letterSpacing = 0.8.sp,
-            )
+                errorMessage?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
 
-            if (!hasNearbyWifiPermission) {
-                PermissionRequestCard(
-                    onGrant = {
-                        val permissions = buildList {
-                            add(Manifest.permission.NEARBY_WIFI_DEVICES)
-                            if (!hasBluetoothConnectPermission) add(Manifest.permission.BLUETOOTH_CONNECT)
-                        }
-                        permissionLauncher.launch(permissions.toTypedArray())
-                    },
-                )
-            } else {
-                players.forEach { player ->
-                    OutputCard(
-                        icon = Icons.Default.Cast,
-                        title = player.name,
-                        subtitle = "BluOS · on your network",
-                        isActive = (target as? OutputTarget.Node)?.player == player,
-                        onClick = { viewModel.selectNode(player) },
+                if (showManualEntry) {
+                    OutlinedTextField(
+                        value = manualHost,
+                        onValueChange = { manualHost = it },
+                        label = { Text("IP address") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
                     )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Button(
+                            onClick = {
+                                viewModel.connectManually(manualHost)
+                                showManualEntry = false
+                                manualHost = ""
+                            },
+                        ) { Text("Connect") }
+                    }
+                } else {
+                    ManualEntryCard(onClick = { showManualEntry = true })
                 }
-                ScanningRow()
-            }
-
-            errorMessage?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            }
-
-            if (showManualEntry) {
-                OutlinedTextField(
-                    value = manualHost,
-                    onValueChange = { manualHost = it },
-                    label = { Text("IP address") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    Button(
-                        onClick = {
-                            viewModel.connectManually(manualHost)
-                            showManualEntry = false
-                            manualHost = ""
-                        },
-                    ) { Text("Connect") }
-                }
-            } else {
-                ManualEntryCard(onClick = { showManualEntry = true })
             }
         }
     }
