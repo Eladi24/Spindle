@@ -2,6 +2,7 @@ package io.github.eladimany.spindle.data.library
 
 import android.content.ContentUris
 import android.content.Context
+import android.os.Build
 import android.provider.MediaStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.data.db.entity.AlbumEntity
@@ -66,7 +67,11 @@ class MediaStoreScanner @Inject constructor(
         val artists = LinkedHashMap<Long, ArtistAccumulator>()
         val folders = LinkedHashMap<Long, FolderAccumulator>()
 
-        val projection = arrayOf(
+        // GENRE is a plain column from API 30; before that it lives in the Genres table.
+        val genreColumn = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+        val genresById = if (genreColumn) emptyMap() else readGenresPre30()
+
+        val projection = listOfNotNull(
             MediaStore.Audio.Media._ID,
             MediaStore.Audio.Media.TITLE,
             MediaStore.Audio.Media.ARTIST,
@@ -79,7 +84,8 @@ class MediaStoreScanner @Inject constructor(
             MediaStore.Audio.Media.BUCKET_ID,
             MediaStore.Audio.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Audio.Media.DATE_ADDED,
-        )
+            if (genreColumn) MediaStore.Audio.Media.GENRE else null,
+        ).toTypedArray()
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
 
         context.contentResolver.query(
@@ -101,6 +107,7 @@ class MediaStoreScanner @Inject constructor(
             val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.BUCKET_ID)
             val bucketNameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME)
             val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val genreCol = if (genreColumn) cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.GENRE) else -1
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
@@ -114,6 +121,8 @@ class MediaStoreScanner @Inject constructor(
                 val folderId = cursor.getLong(bucketIdCol)
                 val folderName = cursor.getString(bucketNameCol) ?: "Unknown folder"
                 val dateAddedMs = cursor.getLong(dateAddedCol) * 1000
+                val genre = (if (genreCol >= 0) cursor.getString(genreCol) else genresById[id])
+                    ?.takeIf { it.isNotBlank() }
 
                 // MediaStore packs disc+track as disc*1000+track when disc info exists.
                 val rawTrack = cursor.getInt(trackCol)
@@ -144,7 +153,7 @@ class MediaStoreScanner @Inject constructor(
                     discNumber = discNumber,
                     durationMs = durationMs,
                     year = year,
-                    genre = null,
+                    genre = genre,
                     folderId = folderId,
                     folderName = folderName,
                     dateAddedMs = dateAddedMs,
@@ -203,4 +212,31 @@ class MediaStoreScanner @Inject constructor(
             ),
         )
     }.flowOn(ioDispatcher)
+
+    /** API 26–29: audio id → its genre name(s), joined with "; " when a track has several. */
+    private fun readGenresPre30(): Map<Long, String> {
+        val byId = HashMap<Long, String>()
+        val genres = context.contentResolver.query(
+            MediaStore.Audio.Genres.EXTERNAL_CONTENT_URI,
+            arrayOf(MediaStore.Audio.Genres._ID, MediaStore.Audio.Genres.NAME),
+            null, null, null,
+        ) ?: return byId
+        genres.use {
+            while (it.moveToNext()) {
+                val genreId = it.getLong(0)
+                val name = it.getString(1)?.takeIf { n -> n.isNotBlank() } ?: continue
+                context.contentResolver.query(
+                    MediaStore.Audio.Genres.Members.getContentUri("external", genreId),
+                    arrayOf(MediaStore.Audio.Genres.Members.AUDIO_ID),
+                    null, null, null,
+                )?.use { members ->
+                    while (members.moveToNext()) {
+                        val audioId = members.getLong(0)
+                        byId[audioId] = byId[audioId]?.let { prev -> "$prev; $name" } ?: name
+                    }
+                }
+            }
+        }
+        return byId
+    }
 }

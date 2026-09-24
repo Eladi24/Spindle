@@ -1287,7 +1287,8 @@ don't wait for things to visibly degrade first. Raised 2026-09-22.
 
 Raised 2026-09-22 as a deferred discussion; direction agreed with the user
 2026-09-23. **Order: finish Phase 3 first, then design these** (mockups before UI,
-per working style). Only the play-history logging below is built.
+per working style). Smart shuffle, play-history logging and the AI-playlist matcher +
+fallback builder are built (below).
 
 User's constraints (non-negotiable):
 - **Size:** bounded, small storage. Budget ~1–2 MB for all history/stats. Never
@@ -1348,6 +1349,44 @@ From the "Spindle smart shuffle" mockup canvas; the user picked A + B + C and he
   control → `SmartShuffleSheet` (ui/shuffle/). `SparkleIcon` and `Modifier.glow`
   live in ui/components. Checked on the A73: pills, sheet (reads the real listen
   count; rule changes persist), button cycle, label placement.
+
+### AI playlists — matcher + no-AI fallback — built 2026-09-24
+
+From the "Spindle AI playlists" mockup canvas (https://claude.ai/artifact/DoqEZnW4A6NU6hEGtwM6wD):
+the user picked A (AI card on Playlists + describe sheet) + C ("Make a playlist like
+this") + D (draft) + E (engine settings), with B (chip builder) as the fallback, and
+asked for the "modern/exciting" v2 look. **Built so far: B, D, the card (fallback
+form), the matcher. Not built: A's free-text prompt, C, E** — they need an AI engine.
+- **Genre was never scanned** — `MediaStoreScanner` wrote `genre = null` since
+  Phase 1. Now: `MediaStore.Audio.Media.GENRE` on API 30+, the `Genres`/`Members`
+  tables on 26–29. Fills on the next scan (the app rescans at startup).
+- **`data/smartplaylists/`** (pure parts unit tested in `PlaylistMatcherTest`, 13 cases):
+  `Genres` splits free-text tags (`;` `,` `/` `|`, dedupe case-insensitively — the A73
+  has "Rock, Rock"); `PlaylistCriteria` (decades, genres, length 20 tracks / ~1 h /
+  ~2 h, leanOnHistory; empty = any); `PlaylistMatcher.pick` = filter → weighted draw
+  (`SmartShuffle.weight`, all rules on, when leaning on history) → fill to length
+  with ≤ max(2, n/5) tracks per artist, relaxed if short → `SmartShuffle.spread`.
+  `LibraryFacets` builds the chips from `TrackDao.allTags()` (genre+year only).
+  `SmartPlaylistGenerator` (singleton) runs it and **holds the draft in memory**
+  (shared by sheet and draft screen; lost on process death — the screen says so).
+- **`AiPlaylistEngine`** interface + `AiEngineStatus` (Ready/Downloading/Unavailable);
+  `NoAiPlaylistEngine` is bound (always Unavailable). Gemini Nano replaces the binding.
+  Track picking never moves into the engine — it only produces `PlaylistCriteria`.
+- **UI (`ui/smartplaylists/`):** `MakePlaylistCard` tops the Playlists list;
+  `BuildPlaylistSheet` (era/genre chips only for values that exist, live "N tracks
+  match"); `DraftPlaylistScreen` (route `playlist_draft`): mosaic, DRAFT badge, tap
+  name to rename, "built from" chips (✕ drops a filter and regenerates; a typed name
+  survives, a suggested one follows the filters), Adjust reopens the sheet, Play /
+  smart shuffle / Remix, ✕ per track, Save → normal playlist, replaces the draft in
+  the back stack. The "new playlist" + moved from the FAB to the top bar, left of import.
+- **Look (`ui/components/AiGlow.kt`):** `edgeGlint` (rotating sweep-gradient light on a
+  hairline border), `aiGlowBehind` (two drifting radial blobs), `TwinkleSparkle`.
+  Blob centres stay one radius below the element's top: a `LazyColumn` clips what's
+  drawn above its own top, which showed as a hard line under the top bar.
+- Checked on the A73 (10 real tracks; the other 167 audio files are excluded voice
+  notes): card, sheet with real genre/decade chips, whole-library and Rock drafts,
+  drop chip, Save → playlist detail, Back → Playlists. Left a "Library mix" test
+  playlist on the A73.
 
 ### Play history logging — built 2026-09-23
 

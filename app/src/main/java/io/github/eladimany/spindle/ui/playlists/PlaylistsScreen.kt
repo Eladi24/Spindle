@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,11 +46,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Playlist
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
+import io.github.eladimany.spindle.ui.smartplaylists.BuildPlaylistSheet
+import io.github.eladimany.spindle.ui.smartplaylists.MakePlaylistCard
 
 @Composable
 fun PlaylistsScreen(
     onPlaylistClick: (Long) -> Unit,
     onSearchClick: () -> Unit = {},
+    onDraftMade: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PlaylistsViewModel = hiltViewModel(),
 ) {
@@ -59,6 +61,7 @@ fun PlaylistsScreen(
     val listState = rememberLazyListState()
     val tapGuard = rememberScrollTapGuard(listState)
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showBuilder by remember { mutableStateOf(false) }
     var renameTarget by remember { mutableStateOf<Playlist?>(null) }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -89,55 +92,60 @@ fun PlaylistsScreen(
                     IconButton(onClick = onSearchClick) {
                         Icon(Icons.Default.Search, contentDescription = "Search")
                     }
+                    IconButton(onClick = { showCreateDialog = true }) {
+                        Icon(Icons.Default.Add, contentDescription = "New playlist")
+                    }
                     IconButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) {
                         Icon(Icons.Default.FileUpload, contentDescription = "Import M3U playlist")
                     }
                 },
             )
         },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showCreateDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "New playlist")
-            }
-        },
     ) { innerPadding ->
-        if (playlists.isEmpty()) {
-            Text(
-                "No playlists yet",
-                modifier = Modifier.padding(innerPadding).padding(16.dp),
-                style = MaterialTheme.typography.bodyLarge,
-            )
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.padding(innerPadding).fillMaxSize(),
-                contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
-            ) {
-                items(playlists, key = { it.id }) { playlist ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable(onClick = tapGuard.guard { onPlaylistClick(playlist.id) })
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(playlist.name, style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                "${playlist.trackCount} tracks",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        IconButton(onClick = { renameTarget = playlist }) {
-                            Icon(Icons.Default.Edit, contentDescription = "Rename playlist")
-                        }
-                        IconButton(onClick = { viewModel.delete(playlist) }) {
-                            Icon(Icons.Default.Delete, contentDescription = "Delete playlist")
-                        }
-                    }
-                    HorizontalDivider()
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.padding(innerPadding).fillMaxSize(),
+            contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+        ) {
+            item(key = "make-playlist") {
+                MakePlaylistCard(
+                    onBuild = tapGuard.guard { showBuilder = true },
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+                )
+            }
+            if (playlists.isEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        "No playlists yet",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
                 }
+            }
+            items(playlists, key = { it.id }) { playlist ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = tapGuard.guard { onPlaylistClick(playlist.id) })
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(playlist.name, style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "${playlist.trackCount} tracks",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    IconButton(onClick = { renameTarget = playlist }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Rename playlist")
+                    }
+                    IconButton(onClick = { viewModel.delete(playlist) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete playlist")
+                    }
+                }
+                HorizontalDivider()
             }
         }
     }
@@ -158,6 +166,17 @@ fun PlaylistsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showBuilder) {
+        BuildPlaylistSheet(
+            initial = null,
+            onDismiss = { showBuilder = false },
+            onMade = {
+                showBuilder = false
+                onDraftMade()
             },
         )
     }

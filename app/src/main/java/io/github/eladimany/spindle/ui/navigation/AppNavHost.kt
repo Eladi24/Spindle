@@ -49,6 +49,7 @@ import io.github.eladimany.spindle.ui.player.QueueScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistDetailScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistsScreen
 import io.github.eladimany.spindle.ui.search.SearchScreen
+import io.github.eladimany.spindle.ui.smartplaylists.DraftPlaylistScreen
 import io.github.eladimany.spindle.playback.QueueManager
 
 private val bottomTabs = listOf(
@@ -193,6 +194,17 @@ fun AppNavHost() {
                     PlaylistsScreen(
                         onPlaylistClick = { navController.navigate(Routes.playlistDetail(it)) },
                         onSearchClick = { navController.navigate(Routes.SEARCH) },
+                        onDraftMade = { navController.navigate(Routes.PLAYLIST_DRAFT) },
+                    )
+                }
+                composable(Routes.PLAYLIST_DRAFT) {
+                    DraftPlaylistScreen(
+                        onBack = { navController.popBackStack() },
+                        onSaved = { id ->
+                            navController.navigate(Routes.playlistDetail(id)) {
+                                popUpTo(Routes.PLAYLIST_DRAFT) { inclusive = true }
+                            }
+                        },
                     )
                 }
                 composable(

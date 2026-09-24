@@ -5,6 +5,7 @@ import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.Upsert
 import io.github.eladimany.spindle.data.db.entity.TrackEntity
+import io.github.eladimany.spindle.data.smartplaylists.TrackTags
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -61,6 +62,10 @@ interface TrackDao {
 
     @Query("SELECT * FROM tracks WHERE albumId = :albumId LIMIT 1")
     suspend fun firstTrackForAlbum(albumId: Long): TrackEntity?
+
+    /** Just the tags the playlist builder filters on — a few bytes per track. */
+    @Query("SELECT genre, year FROM tracks")
+    suspend fun allTags(): List<TrackTags>
 
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun count(): Int
