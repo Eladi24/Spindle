@@ -1,0 +1,99 @@
+package io.github.eladimany.spindle
+
+import android.content.pm.PackageManager
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dagger.hilt.android.AndroidEntryPoint
+import io.github.eladimany.spindle.ui.library.MainViewModel
+import io.github.eladimany.spindle.ui.navigation.AppNavHost
+import io.github.eladimany.spindle.ui.permission.AudioPermissionScreen
+import io.github.eladimany.spindle.ui.permission.audioLibraryPermission
+import io.github.eladimany.spindle.ui.splash.SplashScreen
+import io.github.eladimany.spindle.ui.theme.SpindleTheme
+import kotlinx.coroutines.delay
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+    private val viewModel: MainViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        setContent {
+            SpindleTheme {
+                var hasPermission by remember {
+                    mutableStateOf(
+                        ContextCompat.checkSelfPermission(this, audioLibraryPermission) ==
+                            PackageManager.PERMISSION_GRANTED,
+                    )
+                }
+                val launcher = rememberLauncherForActivityResult(
+                    ActivityResultContracts.RequestPermission(),
+                ) { granted -> hasPermission = granted }
+
+                LaunchedEffect(hasPermission) {
+                    if (hasPermission) viewModel.onPermissionGranted()
+                }
+
+                val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+                val isFirstScan = uiState.isScanning && uiState.trackCount == 0
+
+                var showSplash by remember { mutableStateOf(true) }
+                LaunchedEffect(Unit) {
+                    delay(900)
+                    showSplash = false
+                }
+
+                when {
+                    showSplash -> SplashScreen()
+
+                    !hasPermission -> Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                        AudioPermissionScreen(
+                            onRequestPermission = { launcher.launch(audioLibraryPermission) },
+                            modifier = Modifier.padding(innerPadding),
+                        )
+                    }
+
+                    isFirstScan -> Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(innerPadding),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically),
+                        ) {
+                            CircularProgressIndicator()
+                            Text(
+                                "Scanning your library… ${uiState.scannedCount} tracks so far",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    }
+
+                    else -> AppNavHost()
+                }
+            }
+        }
+    }
+}

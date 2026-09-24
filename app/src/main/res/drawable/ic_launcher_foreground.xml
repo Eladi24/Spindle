@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  "Spindle Signal" mark — a center pin with broadcast rings: reads as a turntable
+  spindle (audio) and as wifi/signal arcs (streaming) at once. See the "Spindle logo
+  concepts" Artifact board for the full set of alternatives considered.
+
+  Also used, unmodified, as the monochrome (Android 13+ themed icon) layer — every
+  shape below is opaque white on transparent, which is exactly what a themed-icon
+  silhouette needs.
+
+  Coordinates are the same design scaled from a 100x100 sketch down to fit the
+  adaptive icon's ~66dp safe zone (radius ~33 around the 108x108 canvas' center).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Center pin -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M48,54 A6,6 0 1 1 60,54 A6,6 0 1 1 48,54 Z" />
+    <!-- Three broadcast rings, each open at the bottom-left like a signal/wifi glyph -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:pathData="M44.1,63.9 A14,14 0 1 1 63.9,63.9" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:pathData="M38.44,69.56 A22,22 0 1 1 69.56,69.56" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="5.5"
+        android:strokeLineCap="round"
+        android:pathData="M32.79,75.21 A30,30 0 1 1 75.21,75.21" />
+</vector>
