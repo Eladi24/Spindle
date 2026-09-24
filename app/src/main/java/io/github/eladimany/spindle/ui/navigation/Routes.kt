@@ -11,6 +11,7 @@ object Routes {
     const val QUEUE = "queue"
     const val SEARCH = "search"
     const val PLAYLIST_DRAFT = "playlist_draft"
+    const val AI_SETTINGS = "ai_settings"
 
     const val ARTIST_DETAIL_PATTERN = "artist/{artistId}"
     fun artistDetail(id: Long) = "artist/$id"

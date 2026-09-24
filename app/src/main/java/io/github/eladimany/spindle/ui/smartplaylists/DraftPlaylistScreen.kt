@@ -140,6 +140,7 @@ fun DraftPlaylistScreen(
             item(key = "filters") {
                 FilterChips(
                     criteria = current.criteria,
+                    fromAi = current.request != null,
                     onDropDecade = viewModel::dropDecade,
                     onDropGenre = viewModel::dropGenre,
                     onAdjust = { showAdjust = true },
@@ -270,7 +271,12 @@ private fun DraftHeader(
                 horizontalArrangement = Arrangement.spacedBy(5.dp),
             ) {
                 Icon(SparkleIcon, contentDescription = null, tint = colors.primary, modifier = Modifier.size(12.dp))
-                Text("DRAFT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, letterSpacing = 0.8.sp)
+                Text(
+                    if (draft.request != null) "AI DRAFT" else "DRAFT",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp,
+                )
             }
             Text(
                 draft.name,
@@ -281,6 +287,15 @@ private fun DraftHeader(
                 maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
+            draft.request?.let {
+                Text(
+                    "“$it”",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.primary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(summary(draft.tracks), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
         }
     }
@@ -316,6 +331,7 @@ private fun CoverMosaic(tracks: List<Track>, fetchArtworkUri: suspend (Track) ->
 @Composable
 private fun FilterChips(
     criteria: PlaylistCriteria,
+    fromAi: Boolean,
     onDropDecade: (Int) -> Unit,
     onDropGenre: (String) -> Unit,
     onAdjust: () -> Unit,
@@ -325,7 +341,7 @@ private fun FilterChips(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
-            "BUILT FROM · TAP ✕ TO DROP",
+            if (fromAi) "SPINDLE HEARD · TAP ✕ TO DROP" else "BUILT FROM · TAP ✕ TO DROP",
             style = MaterialTheme.typography.labelMedium,
             letterSpacing = 0.6.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

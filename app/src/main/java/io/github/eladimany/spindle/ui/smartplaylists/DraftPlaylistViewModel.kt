@@ -80,7 +80,7 @@ class DraftPlaylistViewModel @Inject constructor(
         viewModelScope.launch {
             // A name the user typed survives; a suggested one follows the filters.
             val customName = current.name.takeIf { it != current.criteria.suggestedName() }
-            generator.generate(change(current.criteria), customName)
+            generator.generate(change(current.criteria), customName, current.request)
             _busy.value = false
         }
     }

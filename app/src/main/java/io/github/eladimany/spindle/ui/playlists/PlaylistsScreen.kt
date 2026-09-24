@@ -46,7 +46,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Playlist
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
+import io.github.eladimany.spindle.ui.smartplaylists.AiRequestRow
 import io.github.eladimany.spindle.ui.smartplaylists.BuildPlaylistSheet
+import io.github.eladimany.spindle.ui.smartplaylists.DescribePlaylistSheet
 import io.github.eladimany.spindle.ui.smartplaylists.MakePlaylistCard
 
 @Composable
@@ -54,6 +56,7 @@ fun PlaylistsScreen(
     onPlaylistClick: (Long) -> Unit,
     onSearchClick: () -> Unit = {},
     onDraftMade: () -> Unit = {},
+    onOpenAiSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: PlaylistsViewModel = hiltViewModel(),
 ) {
@@ -62,6 +65,9 @@ fun PlaylistsScreen(
     val tapGuard = rememberScrollTapGuard(listState)
     var showCreateDialog by remember { mutableStateOf(false) }
     var showBuilder by remember { mutableStateOf(false) }
+    var showDescribe by remember { mutableStateOf(false) }
+    val aiStatus by viewModel.aiStatus.collectAsStateWithLifecycle()
+    val aiRequest by viewModel.aiRequest.collectAsStateWithLifecycle()
     var renameTarget by remember { mutableStateOf<Playlist?>(null) }
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -109,9 +115,24 @@ fun PlaylistsScreen(
         ) {
             item(key = "make-playlist") {
                 MakePlaylistCard(
+                    status = aiStatus,
+                    onDescribe = tapGuard.guard { showDescribe = true },
+                    onSuggestion = { viewModel.makeFromRequest(it) },
                     onBuild = tapGuard.guard { showBuilder = true },
+                    onOpenSettings = onOpenAiSettings,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
                 )
+            }
+            aiRequest?.let { request ->
+                item(key = "ai-request") {
+                    AiRequestRow(
+                        state = request,
+                        onOpen = onDraftMade,
+                        onRetry = viewModel::retryAiRequest,
+                        onDismiss = viewModel::dismissAiRequest,
+                        modifier = Modifier.animateItem(),
+                    )
+                }
             }
             if (playlists.isEmpty()) {
                 item(key = "empty") {
@@ -166,6 +187,17 @@ fun PlaylistsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (showDescribe) {
+        DescribePlaylistSheet(
+            initialText = "",
+            onDismiss = { showDescribe = false },
+            onMake = { request, default ->
+                showDescribe = false
+                viewModel.makeFromRequest(request, default)
             },
         )
     }

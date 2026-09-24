@@ -6,6 +6,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.Playlist
 import io.github.eladimany.spindle.data.playlists.M3uImportResult
 import io.github.eladimany.spindle.data.playlists.PlaylistRepository
+import io.github.eladimany.spindle.data.smartplaylists.AiEngineStatus
+import io.github.eladimany.spindle.data.smartplaylists.AiPlaylistEngine
+import io.github.eladimany.spindle.data.smartplaylists.AiRequestState
+import io.github.eladimany.spindle.data.smartplaylists.PlaylistCriteria
+import io.github.eladimany.spindle.data.smartplaylists.SmartPlaylistGenerator
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +23,20 @@ import javax.inject.Inject
 @HiltViewModel
 class PlaylistsViewModel @Inject constructor(
     private val repository: PlaylistRepository,
+    private val generator: SmartPlaylistGenerator,
+    engine: AiPlaylistEngine,
 ) : ViewModel() {
+
+    val aiStatus: StateFlow<AiEngineStatus> = engine.status
+    val aiRequest: StateFlow<AiRequestState?> = generator.aiRequest
+
+    /** Sends a free-text request to the AI; the answer shows up as the in-progress row. */
+    fun makeFromRequest(request: String, default: PlaylistCriteria = PlaylistCriteria()) =
+        generator.makeFromRequest(request, default)
+
+    fun retryAiRequest() = generator.retryAiRequest()
+
+    fun dismissAiRequest() = generator.dismissAiRequest()
 
     val playlists: StateFlow<List<Playlist>> = repository.playlists
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

@@ -1388,6 +1388,49 @@ form), the matcher. Not built: A's free-text prompt, C, E** — they need an AI 
   drop chip, Save → playlist detail, Back → Playlists. Left a "Library mix" test
   playlist on the A73.
 
+### AI playlists — Gemini Nano — built 2026-09-24, NOT yet run on a supported phone
+
+- **Dependency:** `com.google.mlkit:genai-prompt:1.0.0-beta4` (approved by the user;
+  beta, no SLA). Compiles against Kotlin 2.2.10 — no stdlib trap like Coil's. The model
+  lives in Android's AICore, not the APK. Supported devices include the Galaxy S25
+  family. Limits: input < ~4000 tokens, per-app inference quota, no unlocked bootloaders.
+- **API as actually shipped** (read from the jar with javap — the docs page is thin):
+  `Generation.getClient()` → `GenerativeModel`; suspend `checkStatus(): Int`
+  (`FeatureStatus.AVAILABLE/DOWNLOADABLE/DOWNLOADING/UNAVAILABLE`); `download():
+  Flow<DownloadStatus>` (`DownloadStarted(bytesToDownload)`, `DownloadProgress(
+  totalBytesDownloaded)`, `DownloadCompleted`, `DownloadFailed(e)`); suspend
+  `generateContent(generateContentRequest(SystemInstruction(..), TextPart(..)) {
+  temperature; topK; maxOutputTokens })` → `candidates[0].text`; `GenAiException`
+  has `errorCode` and `retryDelay`.
+- **`GeminiNanoEngine`** (bound as `AiPlaylistEngine`): status on creation (any throw
+  → Unavailable), `startDownload()`, `interpret()` never throws — failures become a
+  user-facing message.
+- **`CriteriaPrompt`** (pure, `CriteriaPromptTest` 6 cases): system instruction + a user
+  text listing the library's own genres (top 80) and decades, then the request. The
+  model answers JSON `{genres, decades, length, name}`; the parser tolerates fences
+  and chatter, maps genres through `Genres.key` to real library names and **drops
+  anything invented**, accepts "90s"/"'70s"/1990. Worst case of a bad answer = a
+  wider playlist, never a foreign track.
+- **Flow:** `SmartPlaylistGenerator.makeFromRequest` runs in the generator's own scope
+  (the user can leave the screen) and exposes `aiRequest` (Working / Failed / Ready);
+  Playlists shows it as `AiRequestRow` under the card. Retry reuses the sheet's
+  length/history choices. Drafts carry `request` → "AI DRAFT" badge, the request in
+  quotes, "Spindle heard" chips; Remix/drop keep it.
+- **UI:** `MakePlaylistCard` switches on status — Ready: prompt pill → `DescribePlaylistSheet`,
+  one-tap ideas, "Or pick era and genres yourself"; otherwise the builder button (+ a
+  "Set up on-device AI" link when Downloadable, progress when Downloading). The gear
+  opens `AiSettingsScreen` (route `ai_settings`, mockup E) — only the on-device card;
+  **own-key cloud engine not built**. Enter in the describe box sends (Samsung's
+  keyboard typed a newline despite `ImeAction.Done`).
+- **Verified on the A73:** real engine → "Gemini Nano status: Unavailable" (clean API
+  answer, not an exception), fallback card + E's "Not available". The Ready UI was
+  checked with a temporary fake engine (deleted, never committed): card, sheet, working
+  row, ready row → AI draft (invented "Shoegaze" dropped), failure row + Retry.
+- **Open, for the S25+:** real status/download, reply quality and latency, whether
+  inference works with the app backgrounded, the quota. **Known weakness:** filters are
+  ANDed over tags, so sparse tags give tiny drafts (70s + Rock = 1 track on the A73) —
+  consider relaxing to OR / widening when a draft falls far short of its length.
+
 ### Play history logging — built 2026-09-23
 
 Started early so real data accumulates before the features above are built.

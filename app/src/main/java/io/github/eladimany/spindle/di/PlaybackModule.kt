@@ -11,7 +11,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.github.eladimany.spindle.data.smartplaylists.AiPlaylistEngine
-import io.github.eladimany.spindle.data.smartplaylists.NoAiPlaylistEngine
+import io.github.eladimany.spindle.data.smartplaylists.GeminiNanoEngine
 import io.github.eladimany.spindle.playback.AudioOutput
 import io.github.eladimany.spindle.playback.AudioOutputSwitcher
 import javax.inject.Singleton
@@ -41,5 +41,5 @@ abstract class PlaybackBindingsModule {
     abstract fun bindAudioOutput(impl: AudioOutputSwitcher): AudioOutput
 
     @Binds
-    abstract fun bindAiPlaylistEngine(impl: NoAiPlaylistEngine): AiPlaylistEngine
+    abstract fun bindAiPlaylistEngine(impl: GeminiNanoEngine): AiPlaylistEngine
 }

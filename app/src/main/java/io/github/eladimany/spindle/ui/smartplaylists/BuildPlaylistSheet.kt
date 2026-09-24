@@ -274,7 +274,7 @@ internal fun FilterPill(
 }
 
 @Composable
-private fun LengthSegments(selected: PlaylistLength, onSelect: (PlaylistLength) -> Unit) {
+internal fun LengthSegments(selected: PlaylistLength, onSelect: (PlaylistLength) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(
         modifier = Modifier

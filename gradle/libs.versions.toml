@@ -22,6 +22,7 @@ navigationCompose = "2.9.8"
 ktor = "3.5.2"
 json = "20250517"
 haze = "1.7.2"
+mlkitGenaiPrompt = "1.0.0-beta4"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -67,6 +68,7 @@ ktor-client-cio = { group = "io.ktor", name = "ktor-client-cio", version.ref = "
 haze = { group = "dev.chrisbanes.haze", name = "haze", version.ref = "haze" }
 json = { group = "org.json", name = "json", version.ref = "json" }
 
+mlkit-genai-prompt = { group = "com.google.mlkit", name = "genai-prompt", version.ref = "mlkitGenaiPrompt" }
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

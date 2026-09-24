@@ -49,6 +49,7 @@ import io.github.eladimany.spindle.ui.player.QueueScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistDetailScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistsScreen
 import io.github.eladimany.spindle.ui.search.SearchScreen
+import io.github.eladimany.spindle.ui.smartplaylists.AiSettingsScreen
 import io.github.eladimany.spindle.ui.smartplaylists.DraftPlaylistScreen
 import io.github.eladimany.spindle.playback.QueueManager
 
@@ -195,7 +196,11 @@ fun AppNavHost() {
                         onPlaylistClick = { navController.navigate(Routes.playlistDetail(it)) },
                         onSearchClick = { navController.navigate(Routes.SEARCH) },
                         onDraftMade = { navController.navigate(Routes.PLAYLIST_DRAFT) },
+                        onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                     )
+                }
+                composable(Routes.AI_SETTINGS) {
+                    AiSettingsScreen(onBack = { navController.popBackStack() })
                 }
                 composable(Routes.PLAYLIST_DRAFT) {
                     DraftPlaylistScreen(
