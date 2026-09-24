@@ -13,21 +13,24 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
@@ -40,6 +43,8 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,6 +69,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -73,10 +79,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.eladimany.spindle.R
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.playback.QueueManager
+import io.github.eladimany.spindle.playback.QueueState
 import io.github.eladimany.spindle.ui.components.SparkleIcon
 import io.github.eladimany.spindle.ui.components.TrackArtwork
+import io.github.eladimany.spindle.ui.components.countLabel
+import io.github.eladimany.spindle.ui.components.durationLabel
 import io.github.eladimany.spindle.ui.components.glow
 import io.github.eladimany.spindle.ui.output.OutputPickerSheet
 import io.github.eladimany.spindle.ui.output.displayName
@@ -138,7 +148,20 @@ fun NowPlayingScreen(
         is PlaybackState.Paused -> s.item
         is PlaybackState.Buffering -> s.item
         else -> null
-    } ?: return
+    }
+    if (item == null) {
+        // The queue played out: it's kept, and play starts it again (see PlaybackController.finishQueue).
+        if (queueState.finished && queueState.items.isNotEmpty()) {
+            FinishedNowPlaying(
+                queueState = queueState,
+                onCollapse = onBack,
+                onOpenQueue = onOpenQueue,
+                onPlayAgain = viewModel::togglePlayPause,
+                modifier = modifier,
+            )
+        }
+        return
+    }
 
     val durationMs = when (val s = playbackState) {
         is PlaybackState.Playing -> s.durationMs
@@ -191,6 +214,9 @@ fun NowPlayingScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                // Drawn edge to edge in the player sheet, under the system bars.
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -200,7 +226,7 @@ fun NowPlayingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack, colors = heroIconButtonColors()) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = HeroOnBackdrop)
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Close player", tint = HeroOnBackdrop)
                 }
                 Row(
                     modifier = Modifier
@@ -609,4 +635,94 @@ private fun formatDuration(ms: Long): String {
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+/**
+ * After the last track: the queue is still there, so the player shows "Queue finished"
+ * with one big button that plays it again — reshuffled first if shuffle was on.
+ */
+@Composable
+private fun FinishedNowPlaying(
+    queueState: QueueState,
+    onCollapse: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onPlayAgain: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val totalMs = queueState.items.sumOf { it.track.durationMs }
+    Box(modifier = modifier.fillMaxSize().background(HeroBackdrop)) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onCollapse, colors = heroIconButtonColors()) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Close player", tint = HeroOnBackdrop)
+                }
+                IconButton(onClick = onOpenQueue, colors = heroIconButtonColors()) {
+                    Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Queue", tint = HeroOnBackdrop)
+                }
+            }
+            Spacer(Modifier.weight(1f))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth(0.78f)
+                    .aspectRatio(1f)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(HeroOnBackdrop.copy(alpha = 0.06f))
+                    .border(1.dp, HeroOnBackdrop.copy(alpha = 0.14f), RoundedCornerShape(28.dp)),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_spindle_signal),
+                    contentDescription = null,
+                    tint = HeroOnBackdropMuted,
+                    modifier = Modifier.size(112.dp),
+                )
+                Text(
+                    listOf(countLabel(queueState.items.size, "track"), durationLabel(totalMs)).joinToString(" · "),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = HeroOnBackdropFaint,
+                    modifier = Modifier.padding(top = 12.dp),
+                )
+            }
+            Text(
+                "Queue finished",
+                style = MaterialTheme.typography.headlineSmall,
+                color = HeroOnBackdrop,
+                modifier = Modifier.padding(top = 28.dp),
+            )
+            Text(
+                "Play it again from the top",
+                style = MaterialTheme.typography.bodyLarge,
+                color = HeroOnBackdropMuted,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            val (label, icon) = when (queueState.shuffleMode) {
+                QueueManager.ShuffleMode.OFF -> "Play again" to Icons.Filled.PlayArrow
+                QueueManager.ShuffleMode.SHUFFLE -> "Shuffle again" to Icons.Filled.Shuffle
+                QueueManager.ShuffleMode.SMART -> "Smart shuffle again" to SparkleIcon
+            }
+            Button(
+                onClick = onPlayAgain,
+                modifier = Modifier.padding(top = 28.dp).height(56.dp),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = HeroOnBackdrop, contentColor = Color(0xFF3A2F7A)),
+            ) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.weight(1.2f))
+        }
+    }
 }

@@ -23,8 +23,21 @@ class PlaylistRepository @Inject constructor(
     private val trackDao: TrackDao,
 ) {
     val playlists: Flow<List<Playlist>> = playlistDao.observeAllWithCounts().map { list ->
-        list.map { Playlist(id = it.id, name = it.name, trackCount = it.trackCount, createdAt = it.createdAt, updatedAt = it.updatedAt) }
+        list.map {
+            Playlist(
+                id = it.id,
+                name = it.name,
+                trackCount = it.trackCount,
+                createdAt = it.createdAt,
+                updatedAt = it.updatedAt,
+                totalDurationMs = it.totalDurationMs,
+            )
+        }
     }
+
+    /** Tracks for a playlist's cover mosaic: the first few, one per album. */
+    suspend fun coverTracks(playlistId: Long): List<Track> =
+        playlistDao.leadingTracks(playlistId, limit = 40).map { it.toDomain() }.distinctBy { it.albumId }.take(4)
 
     fun tracksFor(playlistId: Long): Flow<List<Track>> =
         playlistDao.observeTracks(playlistId).map { list -> list.map { it.toDomain() } }
@@ -70,6 +83,14 @@ class PlaylistRepository @Inject constructor(
 
     suspend fun removeEntry(playlistId: Long, crossRefId: Long) {
         playlistDao.removeTrack(crossRefId)
+        touchUpdatedAt(playlistId)
+    }
+
+    /** Undo for [removeEntry]: the same membership row back, same id and position. */
+    suspend fun restoreEntry(playlistId: Long, entry: PlaylistEntry) {
+        playlistDao.addTrack(
+            PlaylistTrackCrossRef(id = entry.crossRefId, playlistId = playlistId, trackId = entry.track.id, position = entry.position),
+        )
         touchUpdatedAt(playlistId)
     }
 

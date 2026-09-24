@@ -15,6 +15,9 @@ interface ArtistDao {
     @Query("SELECT * FROM artists ORDER BY nameSortKey")
     fun pagingSource(): PagingSource<Int, ArtistEntity>
 
+    @Query("SELECT COUNT(*) FROM artists")
+    fun observeCount(): Flow<Int>
+
     @Query("SELECT * FROM artists WHERE id = :id")
     suspend fun getById(id: Long): ArtistEntity?
 

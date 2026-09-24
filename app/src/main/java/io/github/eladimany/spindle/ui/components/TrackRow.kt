@@ -19,11 +19,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import io.github.eladimany.spindle.core.model.Track
 
@@ -52,7 +54,8 @@ fun TrackRow(
             .clip(RoundedCornerShape(16.dp)),
         // Tonal elevation instead of a flat gray swap — the current-track row
         // reads as a raised card rather than a same-shape-different-color panel.
-        tonalElevation = if (isCurrent) 6.dp else 0.dp,
+        // Other rows are clear, so a detail header's glow isn't cut off by an opaque row.
+        color = if (isCurrent) MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp) else Color.Transparent,
         shape = RoundedCornerShape(16.dp),
     ) {
         Row(

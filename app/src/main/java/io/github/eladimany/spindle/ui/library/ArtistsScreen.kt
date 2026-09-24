@@ -24,11 +24,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,8 +44,11 @@ import androidx.paging.compose.itemKey
 import coil3.compose.AsyncImage
 import io.github.eladimany.spindle.core.model.Artist
 import io.github.eladimany.spindle.ui.components.AlphabetIndexBar
+import io.github.eladimany.spindle.ui.components.GlassIconButton
+import io.github.eladimany.spindle.ui.components.LargeTitleBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.ScrubLetterBubble
+import io.github.eladimany.spindle.ui.components.countLabel
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 import kotlinx.coroutines.launch
 
@@ -61,6 +62,7 @@ fun ArtistsScreen(
     val artists = viewModel.artists.collectAsLazyPagingItems()
     val artworkByArtistId by viewModel.artworkByArtistId.collectAsStateWithLifecycle()
     val fetchingIds by viewModel.fetchingIds.collectAsStateWithLifecycle()
+    val artistCount by viewModel.artistCount.collectAsStateWithLifecycle()
     val listState = rememberLazyListState()
     val tapGuard = rememberScrollTapGuard(listState)
     val sectionIndex by viewModel.sectionIndex.collectAsStateWithLifecycle()
@@ -70,14 +72,11 @@ fun ArtistsScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text("Artists") },
-                actions = {
-                    IconButton(onClick = onSearchClick) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
-                    }
-                },
-            )
+            LargeTitleBar(title = "Artists", subtitle = artistCount?.let { countLabel(it, "artist") }) {
+                GlassIconButton(onClick = onSearchClick) {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
+                }
+            }
         },
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding).fillMaxSize()) {
@@ -150,7 +149,7 @@ private fun ArtistRow(
         Column {
             Text(artist.name, style = MaterialTheme.typography.titleMedium)
             Text(
-                "${artist.albumCount} albums · ${artist.trackCount} tracks",
+                "${countLabel(artist.albumCount, "album")} · ${countLabel(artist.trackCount, "track")}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

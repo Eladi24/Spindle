@@ -18,6 +18,7 @@ data class PlaylistWithCount(
     val createdAt: Long,
     val updatedAt: Long,
     val trackCount: Int,
+    val totalDurationMs: Long,
 )
 
 /** One playlist membership row joined to its track — carries [crossRefId] so remove/reorder
@@ -34,8 +35,10 @@ interface PlaylistDao {
     fun observeAll(): Flow<List<PlaylistEntity>>
 
     @Query(
-        "SELECT p.id, p.name, p.createdAt, p.updatedAt, COUNT(x.id) AS trackCount " +
+        "SELECT p.id, p.name, p.createdAt, p.updatedAt, COUNT(x.id) AS trackCount, " +
+            "COALESCE(SUM(t.durationMs), 0) AS totalDurationMs " +
             "FROM playlists p LEFT JOIN playlist_track_cross_ref x ON x.playlistId = p.id " +
+            "LEFT JOIN tracks t ON t.id = x.trackId " +
             "GROUP BY p.id ORDER BY p.nameSortKey",
     )
     fun observeAllWithCounts(): Flow<List<PlaylistWithCount>>
@@ -68,6 +71,14 @@ interface PlaylistDao {
             "WHERE x.playlistId = :playlistId ORDER BY x.position",
     )
     fun observeEntries(playlistId: Long): Flow<List<PlaylistTrackEntryRow>>
+
+    /** The first tracks in playlist order — enough to find four different album covers. */
+    @Query(
+        "SELECT t.* FROM tracks t " +
+            "INNER JOIN playlist_track_cross_ref x ON x.trackId = t.id " +
+            "WHERE x.playlistId = :playlistId ORDER BY x.position LIMIT :limit",
+    )
+    suspend fun leadingTracks(playlistId: Long, limit: Int): List<TrackEntity>
 
     @Query("SELECT COUNT(*) FROM playlist_track_cross_ref WHERE playlistId = :playlistId")
     suspend fun trackCount(playlistId: Long): Int

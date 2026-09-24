@@ -26,11 +26,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,6 +47,9 @@ import androidx.paging.compose.itemKey
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.core.model.TrackSort
 import io.github.eladimany.spindle.ui.components.AlphabetIndexBar
+import io.github.eladimany.spindle.ui.components.GlassIconButton
+import io.github.eladimany.spindle.ui.components.GlowPlayButton
+import io.github.eladimany.spindle.ui.components.LargeTitleBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.ScrubLetterBubble
 import io.github.eladimany.spindle.ui.components.SparkleIcon
@@ -70,6 +71,7 @@ fun TracksScreen(
     val currentTrackId by viewModel.currentTrackId.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val sectionIndex by viewModel.sectionIndex.collectAsStateWithLifecycle()
+    val summary by viewModel.summary.collectAsStateWithLifecycle()
     var showSortMenu by remember { mutableStateOf(false) }
     var actionsTarget by remember { mutableStateOf<List<Track>?>(null) }
     var scrubLetter by remember { mutableStateOf<Char?>(null) }
@@ -87,13 +89,12 @@ fun TracksScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text("Tracks") },
-                actions = {
-                    IconButton(onClick = onSearchClick) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
-                    }
-                    IconButton(onClick = { showSortMenu = true }) {
+            LargeTitleBar(title = "Tracks", subtitle = summary) {
+                GlassIconButton(onClick = onSearchClick) {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
+                }
+                Box {
+                    GlassIconButton(onClick = { showSortMenu = true }) {
                         Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "Sort")
                     }
                     DropdownMenu(expanded = showSortMenu, onDismissRequest = { showSortMenu = false }) {
@@ -110,8 +111,8 @@ fun TracksScreen(
                             onClick = { viewModel.setSort(TrackSort.YEAR); showSortMenu = false },
                         )
                     }
-                },
-            )
+                }
+            }
         },
     ) { innerPadding ->
         if (tracks.itemCount == 0) {
@@ -129,6 +130,7 @@ fun TracksScreen(
             ) {
                 item {
                     ShuffleRow(
+                        onPlay = tapGuard.guard(viewModel::playAll),
                         onShuffle = tapGuard.guard(viewModel::shuffleAll),
                         onSmartShuffle = tapGuard.guard(viewModel::smartShuffleAll),
                         onSmartShuffleSettings = { showSmartShuffleSheet = true },
@@ -192,6 +194,7 @@ fun TracksScreen(
 // border and a soft glow, same "shine without gloss" as the nav bar.
 @Composable
 private fun ShuffleRow(
+    onPlay: () -> Unit,
     onShuffle: () -> Unit,
     onSmartShuffle: () -> Unit,
     onSmartShuffleSettings: () -> Unit,
@@ -203,7 +206,10 @@ private fun ShuffleRow(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
+        // The whole library in order — same glowing button as the detail screens, sized to the pills.
+        GlowPlayButton(onClick = onPlay, modifier = Modifier.size(48.dp))
         Row(
             modifier = Modifier
                 .weight(1f)

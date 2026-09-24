@@ -12,7 +12,7 @@ class SmartShuffleTest {
     private val now = 1_800_000_000_000L
     private val day = 24L * 60 * 60 * 1000
     private val allOn = SmartShuffleRules()
-    private val allOff = SmartShuffleRules(false, false, false, false)
+    private val allOff = SmartShuffleRules(false, false, false, false, false)
 
     private fun item(id: Long, artistId: Long = id, albumId: Long = id) = QueueItem(
         id = "q$id",
@@ -137,5 +137,12 @@ class SmartShuffleTest {
         // Weights 3 vs 0.25 among 38 tracks of weight 1: expected positions ≈ 7 vs 30.
         assertTrue("favourite avg ${favouriteSum / 400}", favouriteSum / 400 < 12)
         assertTrue("skipped avg ${skippedSum / 400}", skippedSum / 400 > 24)
+    }
+
+    @Test
+    fun `a boost triples the weight, and only while its rule is on`() {
+        assertEquals(SmartShuffle.BOOST, SmartShuffle.weight(null, allOn, now, boosted = true), 1e-9)
+        assertEquals(1.0, SmartShuffle.weight(null, allOn.copy(boosted = false), now, boosted = true), 1e-9)
+        assertEquals(1.0, SmartShuffle.weight(null, allOn, now, boosted = false), 1e-9)
     }
 }

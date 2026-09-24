@@ -18,12 +18,15 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -32,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,12 +43,17 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.QueueItem
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.data.history.trackKey
+import io.github.eladimany.spindle.ui.components.BoostTag
+import io.github.eladimany.spindle.ui.components.SwipeToRemoveOrBoost
 import io.github.eladimany.spindle.ui.components.TrackArtwork
+import kotlinx.coroutines.launch
 
 /**
  * Shows the live play queue with drag-to-reorder, remove, and jump-to-track.
@@ -58,6 +67,17 @@ fun QueueScreen(
     viewModel: PlayerViewModel,
 ) {
     val queueState by viewModel.queueState.collectAsStateWithLifecycle()
+    val boostedKeys by viewModel.boostedTrackKeys.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    fun announce(message: String, onUndo: () -> Unit) {
+        snackbarHostState.currentSnackbarData?.dismiss()
+        scope.launch {
+            if (snackbarHostState.showSnackbar(message, actionLabel = "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                onUndo()
+            }
+        }
+    }
 
     // Local order for smooth drag visuals; resyncs whenever the real queue
     // changes for any other reason (auto-advance, a move landing, etc.).
@@ -71,6 +91,7 @@ fun QueueScreen(
 
     Scaffold(
         modifier = modifier,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text(if (displayItems.isEmpty()) "Queue" else "Queue (${displayItems.size})") },
@@ -115,65 +136,79 @@ fun QueueScreen(
                         placementSpec = if (draggingId != null) null else spring(stiffness = Spring.StiffnessMediumLow),
                     ),
                 ) {
-                    QueueRow(
-                        item = item,
-                        isCurrent = item.id == currentItemId,
-                        isDragging = isDragging,
-                        dragOffsetY = if (isDragging) dragDeltaY else 0f,
-                        onClick = { viewModel.jumpTo(item.id) },
+                    val boosted = trackKey(item.track) in boostedKeys
+                    SwipeToRemoveOrBoost(
+                        boosted = boosted,
                         onRemove = {
+                            val index = displayItems.indexOfFirst { it.id == item.id }
                             viewModel.removeFromQueue(item.id)
                             displayItems = displayItems.filter { it.id != item.id }
+                            announce("Removed “${item.track.title}”") { viewModel.restoreToQueue(item.id, index) }
                         },
-                        fetchArtworkUri = viewModel::artworkUriFor,
-                        onDragStart = {
-                            draggingId = item.id
-                            dragDeltaY = 0f
-                            // Measured fresh from the live layout right as the drag starts —
-                            // guaranteed to be this item's real on-screen height (divider
-                            // included, since it's part of the same itemsIndexed slot) at
-                            // this exact moment, not a value some other row reported earlier
-                            // that may since have drifted.
-                            rowHeightPx = listState.layoutInfo.visibleItemsInfo
-                                .find { it.key == item.id }?.size?.toFloat() ?: 0f
+                        onToggleBoost = {
+                            viewModel.toggleBoost(item.track)
+                            announce(if (boosted) "Boost removed" else "Boosted for your next smart shuffle") {
+                                viewModel.toggleBoost(item.track)
+                            }
                         },
-                        onDrag = { delta ->
-                            dragDeltaY += delta
-                            if (rowHeightPx <= 0f) return@QueueRow
-                            // Half-item hysteresis, and a loop rather than a single step, so
-                            // a fast flick across several rows in one callback still lands
-                            // correctly instead of stalling partway. Re-deriving the target
-                            // index from displayItems each iteration (rather than reading
-                            // LazyListState.layoutInfo again) matters here: layoutInfo only
-                            // reflects a swap after the next measure/layout pass, so reading
-                            // it mid-loop would see stale offsets and swap the wrong pair.
-                            while (dragDeltaY > rowHeightPx / 2f) {
-                                val currentIndex = displayItems.indexOfFirst { it.id == item.id }
-                                if (currentIndex >= displayItems.lastIndex) break
-                                displayItems = displayItems.toMutableList().apply {
-                                    add(currentIndex + 1, removeAt(currentIndex))
+                    ) { _ ->
+                        QueueRow(
+                            item = item,
+                            isCurrent = item.id == currentItemId,
+                            isDragging = isDragging,
+                            boosted = boosted,
+                            dragOffsetY = if (isDragging) dragDeltaY else 0f,
+                            onClick = { viewModel.jumpTo(item.id) },
+                            fetchArtworkUri = viewModel::artworkUriFor,
+                            onDragStart = {
+                                draggingId = item.id
+                                dragDeltaY = 0f
+                                // Measured fresh from the live layout right as the drag starts —
+                                // guaranteed to be this item's real on-screen height (divider
+                                // included, since it's part of the same itemsIndexed slot) at
+                                // this exact moment, not a value some other row reported earlier
+                                // that may since have drifted.
+                                rowHeightPx = listState.layoutInfo.visibleItemsInfo
+                                    .find { it.key == item.id }?.size?.toFloat() ?: 0f
+                            },
+                            onDrag = { delta ->
+                                dragDeltaY += delta
+                                if (rowHeightPx <= 0f) return@QueueRow
+                                // Half-item hysteresis, and a loop rather than a single step, so
+                                // a fast flick across several rows in one callback still lands
+                                // correctly instead of stalling partway. Re-deriving the target
+                                // index from displayItems each iteration (rather than reading
+                                // LazyListState.layoutInfo again) matters here: layoutInfo only
+                                // reflects a swap after the next measure/layout pass, so reading
+                                // it mid-loop would see stale offsets and swap the wrong pair.
+                                while (dragDeltaY > rowHeightPx / 2f) {
+                                    val currentIndex = displayItems.indexOfFirst { it.id == item.id }
+                                    if (currentIndex >= displayItems.lastIndex) break
+                                    displayItems = displayItems.toMutableList().apply {
+                                        add(currentIndex + 1, removeAt(currentIndex))
+                                    }
+                                    dragDeltaY -= rowHeightPx
                                 }
-                                dragDeltaY -= rowHeightPx
-                            }
-                            while (dragDeltaY < -rowHeightPx / 2f) {
-                                val currentIndex = displayItems.indexOfFirst { it.id == item.id }
-                                if (currentIndex <= 0) break
-                                displayItems = displayItems.toMutableList().apply {
-                                    add(currentIndex - 1, removeAt(currentIndex))
+                                while (dragDeltaY < -rowHeightPx / 2f) {
+                                    val currentIndex = displayItems.indexOfFirst { it.id == item.id }
+                                    if (currentIndex <= 0) break
+                                    displayItems = displayItems.toMutableList().apply {
+                                        add(currentIndex - 1, removeAt(currentIndex))
+                                    }
+                                    dragDeltaY += rowHeightPx
                                 }
-                                dragDeltaY += rowHeightPx
-                            }
-                        },
-                        onDragEnd = {
-                            val originalIndex = queueState.items.indexOfFirst { it.id == item.id }
-                            val finalIndex = displayItems.indexOfFirst { it.id == item.id }
-                            if (originalIndex >= 0 && finalIndex >= 0 && originalIndex != finalIndex) {
-                                viewModel.moveInQueue(originalIndex, finalIndex)
-                            }
-                            draggingId = null
-                            dragDeltaY = 0f
-                        },
-                    )
+                            },
+                            onDragEnd = {
+                                val originalIndex = queueState.items.indexOfFirst { it.id == item.id }
+                                val finalIndex = displayItems.indexOfFirst { it.id == item.id }
+                                if (originalIndex >= 0 && finalIndex >= 0 && originalIndex != finalIndex) {
+                                    viewModel.moveInQueue(originalIndex, finalIndex)
+                                }
+                                draggingId = null
+                                dragDeltaY = 0f
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -185,9 +220,9 @@ private fun QueueRow(
     item: QueueItem,
     isCurrent: Boolean,
     isDragging: Boolean,
+    boosted: Boolean,
     dragOffsetY: Float,
     onClick: () -> Unit,
-    onRemove: () -> Unit,
     fetchArtworkUri: suspend (Track) -> String?,
     onDragStart: () -> Unit,
     onDrag: (Float) -> Unit,
@@ -216,7 +251,7 @@ private fun QueueRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Only this part is clickable (jump to track) — the ripple stays confined
-            // to here instead of covering the delete/drag icons too.
+            // to here instead of covering the drag handle too. Removing is a swipe left.
             Row(
                 modifier = Modifier
                     .weight(1f)
@@ -229,17 +264,19 @@ private fun QueueRow(
                     modifier = Modifier.size(52.dp),
                 )
                 Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(
-                        item.track.title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            item.track.title,
+                            modifier = Modifier.weight(1f, fill = false),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (boosted) BoostTag(Modifier.padding(start = 8.dp))
+                    }
                     Text(item.track.artistName, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
-            }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Delete, contentDescription = "Remove from queue")
             }
             // 48dp is Material's minimum touch target — the icon itself is only 24dp,
             // too small to reliably long-press-and-drag with a real finger.

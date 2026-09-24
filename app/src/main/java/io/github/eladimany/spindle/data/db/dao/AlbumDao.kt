@@ -15,6 +15,9 @@ interface AlbumDao {
     @Query("SELECT * FROM albums ORDER BY nameSortKey")
     fun pagingSource(): PagingSource<Int, AlbumEntity>
 
+    @Query("SELECT COUNT(*) FROM albums")
+    fun observeCount(): Flow<Int>
+
     @Query("SELECT * FROM albums WHERE artistId = :artistId ORDER BY year, nameSortKey")
     fun observeByArtist(artistId: Long): Flow<List<AlbumEntity>>
 

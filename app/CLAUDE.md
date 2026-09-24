@@ -1454,3 +1454,96 @@ Started early so real data accumulates before the features above are built.
 - Retention: events older than 365 days are pruned on startup.
 - Works identically for local and Node output (both emit Playing/Ended).
 - No UI yet. A "clear listening history" setting belongs in Phase 4 (privacy).
+
+## UI pass — titles, detail headers, playlists, artist — 2026-09-24
+
+From the "Spindle UI pass" mockup canvas (https://claude.ai/artifact/R11zdFyrzmZg74XJuuNRvn):
+the user picked Playlists A (mosaic rows), Detail A (side-by-side header), Titles C
+(title + count + glass buttons), Artist A (full-bleed photo). Checked on the A73.
+- **`LargeTitleBar`** (ui/components) replaces TopAppBar on all 5 tabs: 34sp black
+  title, a count line (`countLabel`/`durationLabel`; Tracks uses `TrackDao.observeStats`,
+  Albums/Artists `observeCount`), round `GlassIconButton`s. Pinned, not collapsing.
+- **`DetailHeader` + `DetailTopBar`** (album, folder, playlist): art left, label, bold
+  title, accent line, meta, `GlowPlayButton` + `SmartShuffleButton` (these screens gained
+  smart shuffle). **The list must start at the screen top** — pass the Scaffold's top
+  padding as `contentPadding`, not a modifier — so the header's violet glow reaches under
+  the clear top bar; the bar fills in and shows the title once item 0 scrolls away.
+- **Rows are transparent now** (`TrackRow`, `PlaylistTrackRow`) unless current/dragged:
+  an opaque `Surface` cut the header glow off with a hard edge.
+- **Playlists list:** `CoverMosaic` (shared with the draft screen) from
+  `PlaylistRepository.coverTracks` (first 40 tracks, one per album, lazily per row),
+  "N tracks · duration" (`PlaylistWithCount.totalDurationMs`), rename/delete in a ⋮ menu.
+- **Artist screen:** photo 400dp full-bleed under the top bar with top + bottom scrims,
+  44sp name; no photo → album-cover backdrop + "Find photo" chip (same opt-in Deezer
+  fetch as the Artists tab). Albums `LazyRow`, then "Most played" (history plays per
+  `trackKey`, loaded once) or "Tracks", top 5 + "All N tracks".
+- **Deezer placeholder:** for artists without a photo Deezer returns a grey silhouette
+  whose picture id is `d41d8cd98f00b204e9800998ecf8427e` (MD5 of ""). Filtered in
+  `DeezerArtistArt.isPlaceholder` both on fetch and when reading saved rows.
+- Known: the status bar strip stays solid above the artist photo — `AppNavHost` pads the
+  NavHost by the status-bar inset for every screen; changing that is app-wide.
+
+### Shuffle pill, queue swipes, boost — 2026-09-24
+
+From rows 5–6 of the same canvas: user picked shuffle C and the swipe design.
+- **`ShufflePair`** ("Shuffle | ✦ Smart", ui/components/DetailHeader.kt) next to the
+  play button on album/folder/playlist/artist; Play = in order. Long-press Smart →
+  `SmartShuffleSheet`. VMs gained `playShuffled()` (`playTracksShuffled`).
+- **`SwipeToRemoveOrBoost`** (ui/components/SwipeActions.kt) replaces the trash icon on
+  queue and playlist rows: left = remove + Undo snackbar, right = boost/un-boost (springs
+  back). Two traps hit on the A73:
+  - **Don't use `SwipeToDismissBox`'s `onDismiss`** — its effect is keyed on the lambda,
+    so every recomposition while settled refired it (boost flipped back and forth, row
+    stuck half-open). A `LaunchedEffect(state.settledValue)` with `rememberUpdatedState`.
+  - **Don't use `rememberSwipeToDismissBoxState`** — it's saveable, and a lazy list keeps
+    saved state per key, so a row restored by Undo came back already dismissed and removed
+    itself again. Plain `remember { SwipeToDismissBoxState(Settled, threshold) }`.
+  - A clear row (playlist rows, for the header glow) must go opaque while swiping, or the
+    action underneath shows through — the content lambda gets `swiping`.
+- **Undo:** queue → `QueueManager.restore(id, index)` (remove only drops the index from
+  `order`, the item stays in `items`; `QueueManagerTest` case). Playlist →
+  `PlaylistRepository.restoreEntry` re-inserts the same cross-ref id + position.
+- **Boost:** `SettingsRepository.boostedTrackKeys` (DataStore string set of history
+  `trackKey`s). `SmartShuffle.weight(..., boosted)` × `BOOST` (3.0) when the new
+  `SmartShuffleRules.boosted` rule is on (5th switch on the sheet); `SmartShuffler` passes
+  the set. **One-shot:** `PlayHistoryRecorder` clears a track's boost when a heard listen
+  is recorded. Queue/playlist rows show a `BoostTag`. Affects the next smart shuffle only;
+  the queue already playing isn't reordered.
+- Verified on the A73: pill, boost + tag + snackbar, remove + Undo on both screens, drag
+  reorder still works beside the swipes, boost used up after a few seconds of play, rule
+  in the sheet. The test playlist "Library mix" on the A73 lost 4 tracks during testing.
+
+### Sliding player, mini-player output + progress, end of queue — 2026-09-24
+
+Rows 7–9 of the canvas: user picked mini-player A, the sliding player, end-of-queue A.
+- **`PlayerSheet`** (ui/player) replaces the `now_playing` route (removed). One sheet drawn
+  over the Scaffold in `AppNavHost`: collapsed it *is* the mini-player, in a 64dp slot the
+  bottom bar reserves (`MiniPlayerHeight`, measured with `onGloballyPositioned`); it grows
+  to full screen as it's dragged/tapped, the mini-player fading along its top edge, the
+  nav island sliding away, the list dimming. `NowPlayingScreen` is laid out full-screen
+  inside and revealed from the top (`wrapContentHeight(Top, unbounded) + requiredHeight` —
+  without it the taller child is centred and the middle of the player showed mid-slide).
+  Back / ⌄ (was ←) collapse it; the queue button snaps it shut and navigates to `queue`.
+  - The **sheet** carries `anchoredDraggable`, not the mini-player: the mini-player is
+    removed once faded, and a gesture on a removed node is cancelled.
+  - **Settling is by direction, not velocity**: moved ≥12% from where it rested → finish
+    the move (`settleTarget`, custom `SheetFling`). The sheet moves with the finger, so the
+    velocity measured on it was ~0 and a quick flick up snapped back (A73).
+  - `SheetNestedScroll` hands drags on the player's scrollable art/title block to the sheet.
+- **Mini-player**: output pill (phone/speaker icon + name → `OutputPickerSheet`) and a 2dp
+  progress line with a glow (`rememberPlaybackProgress`, interpolated twice a second).
+- **End of queue**: `PlaybackController.finishQueue()` stops the output but **keeps the
+  queue** (`QueueState.finished`) — it used to clear it, and Now Playing's early return then
+  showed a black screen. Now Playing shows `FinishedNowPlaying` ("Queue finished", Spindle
+  mark, "Play again" / "Shuffle again" / "Smart shuffle again"); the mini-player shows
+  "Queue finished · N tracks". Play → `replay()` → `QueueManager.restart(orderer)`: back to
+  the top, re-ordered by a fresh shuffle / smart shuffle when a shuffle mode is on
+  (`QueueManagerTest` cases).
+- **Boost now needs a real listen** to be used up: ≥ min(30 s, half the track) — a 1 s
+  skip-through spent it on the A73.
+- README: `.github/assets/spindle-logo.svg` (the app icon as SVG) beside the h1.
+- Verified on the A73: pill + progress, slow drag both ways (follows the finger), tap to
+  open, short flicks both ways, Back, queue from the player, output pill → picker, skip
+  past the end → finished player + mini-player, Play again (in order), Shuffle again
+  (new order). The player now draws edge to edge under the status bar; the artist-photo
+  strip is a separate, still-open issue (AppNavHost pads every route by the top inset).

@@ -59,4 +59,22 @@ class DeezerArtistArtTest {
 
         assertEquals("https://example.com/m.jpg", DeezerArtistArt.firstImageUrl(json))
     }
+
+    @Test
+    fun `treats Deezer's silhouette placeholder as no photo`() {
+        val json = """
+            {
+              "data": [
+                {
+                  "id": 1234,
+                  "name": "Dio",
+                  "picture_big": "https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/500x500-000000-80-0-0.jpg",
+                  "picture_xl": "https://cdn-images.dzcdn.net/images/artist/d41d8cd98f00b204e9800998ecf8427e/1000x1000-000000-80-0-0.jpg"
+                }
+              ]
+            }
+        """.trimIndent()
+
+        assertNull(DeezerArtistArt.firstImageUrl(json))
+    }
 }

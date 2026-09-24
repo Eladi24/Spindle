@@ -8,6 +8,9 @@ import io.github.eladimany.spindle.data.db.entity.TrackEntity
 import io.github.eladimany.spindle.data.smartplaylists.TrackTags
 import kotlinx.coroutines.flow.Flow
 
+/** Size of the whole library, for the Tracks tab's "1,284 tracks · 86 h" line. */
+data class LibraryStats(val trackCount: Int, val totalDurationMs: Long)
+
 @Dao
 interface TrackDao {
     @Query("SELECT * FROM tracks ORDER BY titleSortKey")
@@ -69,6 +72,9 @@ interface TrackDao {
 
     @Query("SELECT COUNT(*) FROM tracks")
     suspend fun count(): Int
+
+    @Query("SELECT COUNT(*) AS trackCount, COALESCE(SUM(durationMs), 0) AS totalDurationMs FROM tracks")
+    fun observeStats(): Flow<LibraryStats>
 
     @Upsert
     suspend fun upsertAll(tracks: List<TrackEntity>)

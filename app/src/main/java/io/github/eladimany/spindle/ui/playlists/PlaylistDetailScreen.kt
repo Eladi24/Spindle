@@ -20,25 +20,23 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileDownload
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Snackbar
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -50,18 +48,29 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.PlaylistEntry
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.data.history.trackKey
+import io.github.eladimany.spindle.ui.components.BoostTag
+import io.github.eladimany.spindle.ui.components.CoverMosaic
+import io.github.eladimany.spindle.ui.components.DetailHeader
+import io.github.eladimany.spindle.ui.components.DetailTopBar
+import io.github.eladimany.spindle.ui.components.HeaderArtSize
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.SwipeToRemoveOrBoost
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackArtwork
+import io.github.eladimany.spindle.ui.components.countLabel
+import io.github.eladimany.spindle.ui.components.durationLabel
 import kotlinx.coroutines.launch
 
 @Composable
@@ -86,6 +95,15 @@ fun PlaylistDetailScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
+    val boostedKeys by viewModel.boostedTrackKeys.collectAsStateWithLifecycle()
+    fun announce(message: String, onUndo: () -> Unit) {
+        snackbarHostState.currentSnackbarData?.dismiss()
+        scope.launch {
+            if (snackbarHostState.showSnackbar(message, actionLabel = "Undo", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) {
+                onUndo()
+            }
+        }
+    }
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("audio/x-mpegurl"),
     ) { uri ->
@@ -101,43 +119,54 @@ fun PlaylistDetailScreen(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState, modifier = Modifier.padding(bottom = LocalBottomOverlayPadding.current)) },
         topBar = {
-            TopAppBar(
-                title = { Text(playlist?.name ?: "") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = {
-                        exportLauncher.launch("${playlist?.name ?: "playlist"}.m3u8")
-                    }) {
-                        Icon(Icons.Default.FileDownload, contentDescription = "Export as M3U")
-                    }
-                    IconButton(onClick = { showRenameDialog = true }) {
-                        Icon(Icons.Default.Edit, contentDescription = "Rename playlist")
-                    }
-                    IconButton(onClick = viewModel::playAll) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Play all")
-                    }
-                },
-            )
+            DetailTopBar(title = playlist?.name.orEmpty(), onBack = onBack, listState = listState) {
+                IconButton(onClick = {
+                    exportLauncher.launch("${playlist?.name ?: "playlist"}.m3u8")
+                }) {
+                    Icon(Icons.Default.FileDownload, contentDescription = "Export as M3U")
+                }
+                IconButton(onClick = { showRenameDialog = true }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Rename playlist")
+                }
+            }
         },
     ) { innerPadding ->
-        if (displayEntries.isEmpty()) {
-            Text(
-                "No tracks yet — long-press a track anywhere in the library and choose this playlist.",
-                modifier = Modifier.padding(innerPadding).padding(16.dp),
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            return@Scaffold
-        }
-
         LazyColumn(
             state = listState,
-            modifier = Modifier.padding(innerPadding).fillMaxSize(),
-            contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(top = innerPadding.calculateTopPadding(), bottom = LocalBottomOverlayPadding.current),
         ) {
+            item(key = "header") {
+                playlist?.let { p ->
+                    val tracks = displayEntries.map { it.track }
+                    DetailHeader(
+                        label = "PLAYLIST",
+                        title = p.name,
+                        onTitleClick = { showRenameDialog = true },
+                        meta = listOfNotNull(
+                            countLabel(tracks.size, "track"),
+                            tracks.sumOf { it.durationMs }.takeIf { it > 0 }?.let { durationLabel(it) },
+                            tracks.map { it.artistId }.distinct().size.takeIf { it > 1 }?.let { countLabel(it, "artist") },
+                        ).joinToString(" · "),
+                        onPlay = viewModel::playAll,
+                        onShuffle = viewModel::playShuffled,
+                        onSmartShuffle = viewModel::playSmartShuffled,
+                        playEnabled = tracks.isNotEmpty(),
+                    ) {
+                        CoverMosaic(tracks, viewModel::artworkUriFor, size = HeaderArtSize, cornerRadius = 14.dp)
+                    }
+                }
+            }
+            if (displayEntries.isEmpty()) {
+                item(key = "empty") {
+                    Text(
+                        "No tracks yet — long-press a track anywhere in the library and choose this playlist.",
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
             itemsIndexed(displayEntries, key = { _, entry -> entry.crossRefId }) { _, entry ->
                 val isDragging = entry.crossRefId == draggingId
                 Box(
@@ -145,52 +174,66 @@ fun PlaylistDetailScreen(
                         placementSpec = if (draggingId != null) null else spring(stiffness = Spring.StiffnessMediumLow),
                     ),
                 ) {
-                    PlaylistTrackRow(
-                        entry = entry,
-                        isCurrent = entry.track.id == currentTrackId,
-                        isDragging = isDragging,
-                        dragOffsetY = if (isDragging) dragDeltaY else 0f,
-                        onClick = { viewModel.playTrack(entry.track) },
-                        onLongClick = { actionsTarget = listOf(entry.track) },
+                    val boosted = trackKey(entry.track) in boostedKeys
+                    SwipeToRemoveOrBoost(
+                        boosted = boosted,
                         onRemove = {
                             viewModel.removeEntry(entry.crossRefId)
                             displayEntries = displayEntries.filter { it.crossRefId != entry.crossRefId }
+                            announce("Removed “${entry.track.title}”") { viewModel.restoreEntry(entry) }
                         },
-                        fetchArtworkUri = viewModel::artworkUriFor,
-                        onDragStart = {
-                            draggingId = entry.crossRefId
-                            dragDeltaY = 0f
-                            rowHeightPx = listState.layoutInfo.visibleItemsInfo
-                                .find { it.key == entry.crossRefId }?.size?.toFloat() ?: 0f
+                        onToggleBoost = {
+                            viewModel.toggleBoost(entry.track)
+                            announce(if (boosted) "Boost removed" else "Boosted for your next smart shuffle") {
+                                viewModel.toggleBoost(entry.track)
+                            }
                         },
-                        onDrag = { delta ->
-                            dragDeltaY += delta
-                            if (rowHeightPx <= 0f) return@PlaylistTrackRow
-                            while (dragDeltaY > rowHeightPx / 2f) {
-                                val currentIndex = displayEntries.indexOfFirst { it.crossRefId == entry.crossRefId }
-                                if (currentIndex >= displayEntries.lastIndex) break
-                                displayEntries = displayEntries.toMutableList().apply {
-                                    add(currentIndex + 1, removeAt(currentIndex))
+                    ) { swiping ->
+                        PlaylistTrackRow(
+                            entry = entry,
+                            isCurrent = entry.track.id == currentTrackId,
+                            isDragging = isDragging,
+                            swiping = swiping,
+                            boosted = boosted,
+                            dragOffsetY = if (isDragging) dragDeltaY else 0f,
+                            onClick = { viewModel.playTrack(entry.track) },
+                            onLongClick = { actionsTarget = listOf(entry.track) },
+                            fetchArtworkUri = viewModel::artworkUriFor,
+                            onDragStart = {
+                                draggingId = entry.crossRefId
+                                dragDeltaY = 0f
+                                rowHeightPx = listState.layoutInfo.visibleItemsInfo
+                                    .find { it.key == entry.crossRefId }?.size?.toFloat() ?: 0f
+                            },
+                            onDrag = { delta ->
+                                dragDeltaY += delta
+                                if (rowHeightPx <= 0f) return@PlaylistTrackRow
+                                while (dragDeltaY > rowHeightPx / 2f) {
+                                    val currentIndex = displayEntries.indexOfFirst { it.crossRefId == entry.crossRefId }
+                                    if (currentIndex >= displayEntries.lastIndex) break
+                                    displayEntries = displayEntries.toMutableList().apply {
+                                        add(currentIndex + 1, removeAt(currentIndex))
+                                    }
+                                    dragDeltaY -= rowHeightPx
                                 }
-                                dragDeltaY -= rowHeightPx
-                            }
-                            while (dragDeltaY < -rowHeightPx / 2f) {
-                                val currentIndex = displayEntries.indexOfFirst { it.crossRefId == entry.crossRefId }
-                                if (currentIndex <= 0) break
-                                displayEntries = displayEntries.toMutableList().apply {
-                                    add(currentIndex - 1, removeAt(currentIndex))
+                                while (dragDeltaY < -rowHeightPx / 2f) {
+                                    val currentIndex = displayEntries.indexOfFirst { it.crossRefId == entry.crossRefId }
+                                    if (currentIndex <= 0) break
+                                    displayEntries = displayEntries.toMutableList().apply {
+                                        add(currentIndex - 1, removeAt(currentIndex))
+                                    }
+                                    dragDeltaY += rowHeightPx
                                 }
-                                dragDeltaY += rowHeightPx
-                            }
-                        },
-                        onDragEnd = {
-                            if (displayEntries.map { it.crossRefId } != entries.map { it.crossRefId }) {
-                                viewModel.reorder(displayEntries)
-                            }
-                            draggingId = null
-                            dragDeltaY = 0f
-                        },
-                    )
+                            },
+                            onDragEnd = {
+                                if (displayEntries.map { it.crossRefId } != entries.map { it.crossRefId }) {
+                                    viewModel.reorder(displayEntries)
+                                }
+                                draggingId = null
+                                dragDeltaY = 0f
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -231,10 +274,11 @@ private fun PlaylistTrackRow(
     entry: PlaylistEntry,
     isCurrent: Boolean,
     isDragging: Boolean,
+    swiping: Boolean,
+    boosted: Boolean,
     dragOffsetY: Float,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
-    onRemove: () -> Unit,
     fetchArtworkUri: suspend (Track) -> String?,
     onDragStart: () -> Unit,
     onDrag: (Float) -> Unit,
@@ -249,8 +293,14 @@ private fun PlaylistTrackRow(
             .scale(if (isDragging) 1.02f else 1f)
             .shadow(elevation = if (isDragging) 6.dp else 0.dp, shape = RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
-        color = if (isDragging) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-        tonalElevation = if (isCurrent && !isDragging) 6.dp else 0.dp,
+        // Clear unless lifted, current or mid-swipe, so the header's glow isn't cut off by
+        // an opaque row — but a swiped row must hide the action underneath it.
+        color = when {
+            isDragging -> MaterialTheme.colorScheme.primaryContainer
+            isCurrent -> MaterialTheme.colorScheme.surfaceColorAtElevation(6.dp)
+            swiping -> MaterialTheme.colorScheme.surface
+            else -> Color.Transparent
+        },
     ) {
         Row(
             modifier = Modifier
@@ -270,17 +320,19 @@ private fun PlaylistTrackRow(
                     modifier = Modifier.size(52.dp),
                 )
                 Column(modifier = Modifier.weight(1f).padding(start = 12.dp)) {
-                    Text(
-                        entry.track.title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            entry.track.title,
+                            modifier = Modifier.weight(1f, fill = false),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (boosted) BoostTag(Modifier.padding(start = 8.dp))
+                    }
                     Text(entry.track.artistName, style = MaterialTheme.typography.bodySmall, maxLines = 1)
                 }
-            }
-            IconButton(onClick = onRemove) {
-                Icon(Icons.Default.Delete, contentDescription = "Remove from playlist")
             }
             Box(
                 modifier = Modifier

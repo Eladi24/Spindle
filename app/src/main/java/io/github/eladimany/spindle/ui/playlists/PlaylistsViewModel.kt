@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.Playlist
+import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.playlists.M3uImportResult
 import io.github.eladimany.spindle.data.playlists.PlaylistRepository
 import io.github.eladimany.spindle.data.smartplaylists.AiEngineStatus
@@ -11,6 +13,7 @@ import io.github.eladimany.spindle.data.smartplaylists.AiPlaylistEngine
 import io.github.eladimany.spindle.data.smartplaylists.AiRequestState
 import io.github.eladimany.spindle.data.smartplaylists.PlaylistCriteria
 import io.github.eladimany.spindle.data.smartplaylists.SmartPlaylistGenerator
+import javax.inject.Inject
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,11 +21,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @HiltViewModel
 class PlaylistsViewModel @Inject constructor(
     private val repository: PlaylistRepository,
+    private val artworkRepository: ArtworkRepository,
     private val generator: SmartPlaylistGenerator,
     engine: AiPlaylistEngine,
 ) : ViewModel() {
@@ -78,4 +81,8 @@ class PlaylistsViewModel @Inject constructor(
     fun addTracks(playlistId: Long, trackIds: List<Long>) {
         viewModelScope.launch { repository.addTracks(playlistId, trackIds) }
     }
+
+    suspend fun coverTracks(playlistId: Long): List<Track> = repository.coverTracks(playlistId)
+
+    suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)
 }

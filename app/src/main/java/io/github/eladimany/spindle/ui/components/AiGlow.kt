@@ -38,7 +38,7 @@ import kotlin.math.sin
 // Everything animates only while composed, i.e. while the surface is on screen.
 
 /** The glow colours behind AI surfaces — deeper than the theme's primary/tertiary so they read as light, not fill. */
-private val GlowViolet = Color(0xFF5B4BE0)
+internal val GlowViolet = Color(0xFF5B4BE0)
 private val GlowPink = Color(0xFFB0487A)
 
 /** 0–360, one turn per [periodMs]. Drives [edgeGlint]. */

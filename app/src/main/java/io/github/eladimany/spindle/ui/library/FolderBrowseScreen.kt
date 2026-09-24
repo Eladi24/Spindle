@@ -14,18 +14,19 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.eladimany.spindle.ui.components.GlassIconButton
+import io.github.eladimany.spindle.ui.components.LargeTitleBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.countLabel
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 
 @Composable
@@ -43,17 +44,14 @@ fun FolderBrowseScreen(
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text("Folders") },
-                actions = {
-                    IconButton(onClick = onSearchClick) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
-                    }
-                    IconButton(onClick = onManageFolders) {
-                        Icon(Icons.Default.Settings, contentDescription = "Manage folders")
-                    }
-                },
-            )
+            LargeTitleBar(title = "Folders", subtitle = countLabel(folders.size, "folder")) {
+                GlassIconButton(onClick = onSearchClick) {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
+                }
+                GlassIconButton(onClick = onManageFolders) {
+                    Icon(Icons.Default.Settings, contentDescription = "Manage folders")
+                }
+            }
         },
     ) { innerPadding ->
         LazyColumn(

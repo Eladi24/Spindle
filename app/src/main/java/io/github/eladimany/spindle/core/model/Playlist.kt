@@ -6,4 +6,5 @@ data class Playlist(
     val trackCount: Int,
     val createdAt: Long,
     val updatedAt: Long,
+    val totalDurationMs: Long = 0,
 )

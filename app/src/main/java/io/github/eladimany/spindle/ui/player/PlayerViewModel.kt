@@ -1,17 +1,23 @@
 package io.github.eladimany.spindle.ui.player
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.data.history.trackKey
 import io.github.eladimany.spindle.data.library.ArtworkRepository
+import io.github.eladimany.spindle.data.prefs.SettingsRepository
 import io.github.eladimany.spindle.playback.AudioOutputSwitcher
 import io.github.eladimany.spindle.playback.OutputTarget
 import io.github.eladimany.spindle.playback.PlaybackController
 import io.github.eladimany.spindle.playback.QueueManager
 import io.github.eladimany.spindle.playback.QueueState
-import kotlinx.coroutines.flow.StateFlow
 import javax.inject.Inject
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /**
  * Shared playback UI state — the mini-player bar and Now Playing screen both use the
@@ -21,6 +27,7 @@ import javax.inject.Inject
 class PlayerViewModel @Inject constructor(
     private val controller: PlaybackController,
     private val artworkRepository: ArtworkRepository,
+    private val settings: SettingsRepository,
     audioOutputSwitcher: AudioOutputSwitcher,
 ) : ViewModel() {
 
@@ -38,6 +45,18 @@ class PlayerViewModel @Inject constructor(
     fun seekTo(seconds: Int) = controller.seekTo(seconds)
     fun jumpTo(queueItemId: String) = controller.jumpTo(queueItemId)
     fun removeFromQueue(queueItemId: String) = controller.remove(queueItemId)
+    fun restoreToQueue(queueItemId: String, index: Int) = controller.restore(queueItemId, index)
+
+    /** Tracks swiped right in the queue — they come up sooner in the next smart shuffle. */
+    val boostedTrackKeys: StateFlow<Set<Long>> = settings.boostedTrackKeys
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun isBoosted(track: Track): Boolean = trackKey(track) in boostedTrackKeys.value
+
+    fun toggleBoost(track: Track) {
+        val key = trackKey(track)
+        viewModelScope.launch { settings.setBoosted(key, key !in boostedTrackKeys.value) }
+    }
     fun moveInQueue(from: Int, to: Int) = controller.move(from, to)
     /** Off → Shuffle → Smart → Off. Returns the new mode, for the button's pop-up label. */
     fun cycleShuffleMode(): QueueManager.ShuffleMode {

@@ -62,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.smartplaylists.PlaylistCriteria
 import io.github.eladimany.spindle.data.smartplaylists.PlaylistDraft
+import io.github.eladimany.spindle.ui.components.CoverMosaic
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.SparkleIcon
 import io.github.eladimany.spindle.ui.components.TrackArtwork
@@ -259,7 +260,7 @@ private fun DraftHeader(
         verticalAlignment = Alignment.Bottom,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        CoverMosaic(draft.tracks, fetchArtworkUri)
+        CoverMosaic(draft.tracks, fetchArtworkUri, size = 132.dp, cornerRadius = 22.dp)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 modifier = Modifier
@@ -297,33 +298,6 @@ private fun DraftHeader(
                 )
             }
             Text(summary(draft.tracks), style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
-        }
-    }
-}
-
-/** 2×2 of the first four different albums' covers (fewer albums → fewer tiles filled). */
-@Composable
-private fun CoverMosaic(tracks: List<Track>, fetchArtworkUri: suspend (Track) -> String?) {
-    val covers = tracks.distinctBy { it.albumId }.take(4)
-    Box(
-        modifier = Modifier
-            .size(132.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(22.dp)),
-    ) {
-        if (covers.size < 4) {
-            covers.firstOrNull()?.let {
-                TrackArtwork(it, fetchArtworkUri, Modifier.fillMaxSize(), cornerRadiusDp = 0)
-            }
-        } else {
-            Column {
-                covers.chunked(2).forEach { row ->
-                    Row {
-                        row.forEach { TrackArtwork(it, fetchArtworkUri, Modifier.size(66.dp), cornerRadiusDp = 0) }
-                    }
-                }
-            }
         }
     }
 }

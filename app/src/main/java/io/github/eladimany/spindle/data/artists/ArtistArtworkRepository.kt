@@ -13,7 +13,10 @@ class ArtistArtworkRepository @Inject constructor(
     private val deezerClient: DeezerArtistArtworkClient,
 ) {
     val artworkByArtistId: Flow<Map<Long, String>> =
-        artistArtworkDao.observeAll().map { rows -> rows.associate { it.artistId to it.imageUrl } }
+        artistArtworkDao.observeAll().map { rows ->
+            // Rows saved before placeholders were filtered out still hold the silhouette.
+            rows.filterNot { DeezerArtistArt.isPlaceholder(it.imageUrl) }.associate { it.artistId to it.imageUrl }
+        }
 
     /** No-op if Deezer has no match — never overwrites a good URL with nothing. */
     suspend fun fetch(artistId: Long, artistName: String) {

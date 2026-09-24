@@ -7,7 +7,6 @@ object Routes {
     const val FOLDERS = "folders"
     const val PLAYLISTS = "playlists"
     const val MANAGE_FOLDERS = "manage_folders"
-    const val NOW_PLAYING = "now_playing"
     const val QUEUE = "queue"
     const val SEARCH = "search"
     const val PLAYLIST_DRAFT = "playlist_draft"

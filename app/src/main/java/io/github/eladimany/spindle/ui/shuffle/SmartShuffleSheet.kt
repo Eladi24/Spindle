@@ -104,6 +104,13 @@ fun SmartShuffleSheet(
                     checked = rules.rediscover,
                     onCheckedChange = { viewModel.setRules(rules.copy(rediscover = it)) },
                 )
+                RuleDivider()
+                RuleRow(
+                    title = "Boosted tracks",
+                    description = "Songs you swiped right in the queue come up sooner — once, in the next smart shuffle",
+                    checked = rules.boosted,
+                    onCheckedChange = { viewModel.setRules(rules.copy(boosted = it)) },
+                )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(horizontal = 4.dp)) {

@@ -7,13 +7,14 @@ import io.github.eladimany.spindle.data.history.PlayEndReason
 import io.github.eladimany.spindle.data.history.PlayEventDao
 import io.github.eladimany.spindle.data.history.PlayEventEntity
 import io.github.eladimany.spindle.data.history.trackKey
+import io.github.eladimany.spindle.data.prefs.SettingsRepository
+import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
-import javax.inject.Inject
-import javax.inject.Singleton
 
 /**
  * Records one [PlayEventEntity] per listen for smart shuffle / smart playlists.
@@ -24,6 +25,7 @@ import javax.inject.Singleton
 @Singleton
 class PlayHistoryRecorder @Inject constructor(
     private val dao: PlayEventDao,
+    private val settings: SettingsRepository,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var session: ListenSession? = null
@@ -64,10 +66,18 @@ class PlayHistoryRecorder @Inject constructor(
             trackDurationMs = track.durationMs,
             endReason = reason,
         )
-        scope.launch { dao.insert(event) }
+        scope.launch {
+            dao.insert(event)
+            // A boost lasts one play: used up once the track has really been listened to —
+            // not by skipping past it (seen on the A73: a 1 s skip-through spent the boost).
+            if (listenedMs >= minOf(BOOST_SPENT_AFTER_MS, track.durationMs / 2)) {
+                settings.setBoosted(event.trackKey, boosted = false)
+            }
+        }
     }
 
     private companion object {
         val RETENTION_MS = TimeUnit.DAYS.toMillis(365)
+        const val BOOST_SPENT_AFTER_MS = 30_000L
     }
 }

@@ -14,19 +14,22 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import io.github.eladimany.spindle.ui.components.AlbumArtwork
+import io.github.eladimany.spindle.ui.components.GlassIconButton
+import io.github.eladimany.spindle.ui.components.LargeTitleBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.countLabel
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 
 @Composable
@@ -37,20 +40,18 @@ fun AlbumsScreen(
     viewModel: AlbumsViewModel = hiltViewModel(),
 ) {
     val albums = viewModel.albums.collectAsLazyPagingItems()
+    val albumCount by viewModel.albumCount.collectAsStateWithLifecycle()
     val gridState = rememberLazyGridState()
     val tapGuard = rememberScrollTapGuard(gridState)
 
     Scaffold(
         modifier = modifier,
         topBar = {
-            TopAppBar(
-                title = { Text("Albums") },
-                actions = {
-                    IconButton(onClick = onSearchClick) {
-                        Icon(Icons.Default.Search, contentDescription = "Search")
-                    }
-                },
-            )
+            LargeTitleBar(title = "Albums", subtitle = albumCount?.let { countLabel(it, "album") }) {
+                GlassIconButton(onClick = onSearchClick) {
+                    Icon(Icons.Default.Search, contentDescription = "Search")
+                }
+            }
         },
     ) { innerPadding ->
         LazyVerticalGrid(

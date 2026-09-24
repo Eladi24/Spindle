@@ -1,4 +1,4 @@
-# Spindle 🎵
+# <img src=".github/assets/spindle-logo.svg" alt="Spindle logo" width="44" align="top"> Spindle
 
 **Your own music, on your hi-fi, at full quality: straight from your Android phone.**
 

@@ -42,6 +42,8 @@ class SettingsRepository @Inject constructor(
     private val favouritesKey = booleanPreferencesKey("smart_shuffle_favourites")
     private val holdBackSkippedKey = booleanPreferencesKey("smart_shuffle_hold_back_skipped")
     private val rediscoverKey = booleanPreferencesKey("smart_shuffle_rediscover")
+    private val boostedRuleKey = booleanPreferencesKey("smart_shuffle_boosted")
+    private val boostedTrackKeysKey = stringSetPreferencesKey("boosted_track_keys")
 
     val smartShuffleRules: Flow<SmartShuffleRules> = context.dataStore.data.map { prefs ->
         SmartShuffleRules(
@@ -49,6 +51,7 @@ class SettingsRepository @Inject constructor(
             favourites = prefs[favouritesKey] ?: true,
             holdBackSkipped = prefs[holdBackSkippedKey] ?: true,
             rediscover = prefs[rediscoverKey] ?: true,
+            boosted = prefs[boostedRuleKey] ?: true,
         )
     }
 
@@ -58,6 +61,20 @@ class SettingsRepository @Inject constructor(
             prefs[favouritesKey] = rules.favourites
             prefs[holdBackSkippedKey] = rules.holdBackSkipped
             prefs[rediscoverKey] = rules.rediscover
+            prefs[boostedRuleKey] = rules.boosted
+        }
+    }
+
+    /** History [io.github.eladimany.spindle.data.history.trackKey]s of tracks swiped right
+     * in the queue — a handful of numbers, so DataStore rather than a table. */
+    val boostedTrackKeys: Flow<Set<Long>> = context.dataStore.data.map { prefs ->
+        prefs[boostedTrackKeysKey].orEmpty().mapNotNull { it.toLongOrNull() }.toSet()
+    }
+
+    suspend fun setBoosted(trackKey: Long, boosted: Boolean) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[boostedTrackKeysKey].orEmpty()
+            prefs[boostedTrackKeysKey] = if (boosted) current + trackKey.toString() else current - trackKey.toString()
         }
     }
 

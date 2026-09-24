@@ -187,4 +187,34 @@ class QueueManagerTest {
         assertEquals(0, manager.size)
         assertNull(manager.currentItem)
     }
+
+    @Test
+    fun `restore puts a removed item back where it was`() {
+        manager.setQueue(fixture, startIndex = 2)
+        manager.remove("q2")
+        assertEquals(1, manager.currentIndex)
+        manager.restore("q2", 1)
+        assertEquals(fixture, manager.queue)
+        assertEquals(2, manager.currentIndex)
+        assertEquals("q3", manager.currentItem?.id)
+    }
+
+    @Test
+    fun `restart goes back to the top, keeping an unshuffled order`() {
+        manager.setQueue(fixture, startIndex = 4)
+        manager.move(4, 0)
+        manager.restart()
+        assertEquals(0, manager.currentIndex)
+        assertEquals("q5", manager.currentItem?.id)
+    }
+
+    @Test
+    fun `restart reshuffles a shuffled queue, still every track once`() {
+        manager.setQueueShuffled(fixture)
+        manager.remove("q3")
+        manager.restart { items, _ -> items.indices.reversed().toList() }
+        assertEquals(0, manager.currentIndex)
+        assertEquals(4, manager.size)
+        assertEquals(fixture.filter { it.id != "q3" }.map { it.id }.toSet(), manager.queue.map { it.id }.toSet())
+    }
 }

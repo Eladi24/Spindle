@@ -15,12 +15,14 @@ data class TrackStats(
     val lastPlayedMs: Long?,
 )
 
-/** The four switches on the Smart shuffle sheet. All on by default. */
+/** The switches on the Smart shuffle sheet. All on by default. */
 data class SmartShuffleRules(
     val spreadArtists: Boolean = true,
     val favourites: Boolean = true,
     val holdBackSkipped: Boolean = true,
     val rediscover: Boolean = true,
+    /** Tracks swiped right in the queue come up sooner — see [SmartShuffle.BOOST]. */
+    val boosted: Boolean = true,
 )
 
 /**
@@ -41,9 +43,16 @@ object SmartShuffle {
     private const val REDISCOVER_AFTER_MS = 60 * DAY_MS
     private const val RECENT_MS = DAY_MS
 
-    fun weight(stats: TrackStats?, rules: SmartShuffleRules, nowMs: Long): Double {
-        if (stats == null || stats.plays == 0) return 1.0
-        var w = 1.0
+    /**
+     * A boosted track's weight multiplier: likelier to come up early, never forced
+     * first. The boost is one-shot — used up once the track plays.
+     */
+    const val BOOST = 3.0
+
+    fun weight(stats: TrackStats?, rules: SmartShuffleRules, nowMs: Long, boosted: Boolean = false): Double {
+        val boost = if (boosted && rules.boosted) BOOST else 1.0
+        if (stats == null || stats.plays == 0) return boost
+        var w = boost
         if (stats.plays >= MIN_PLAYS_FOR_RATES) {
             if (rules.favourites) w *= 1.0 + 2.0 * stats.fullListens / stats.plays
             if (rules.holdBackSkipped && stats.skips * 2 >= stats.plays) w *= 0.25
@@ -68,11 +77,13 @@ object SmartShuffle {
         nowMs: Long,
         pinnedFirst: Int? = null,
         random: Random = Random.Default,
+        boostedKeys: Set<Long> = emptySet(),
     ): List<Int> {
         val rest = items.indices
             .filter { it != pinnedFirst }
             .map { i ->
-                val w = weight(statsByKey[keyOf(items[i])], rules, nowMs)
+                val key = keyOf(items[i])
+                val w = weight(statsByKey[key], rules, nowMs, boosted = key in boostedKeys)
                 // nextDouble() can return 0.0; ln(0) would tie everything at -inf.
                 val u = random.nextDouble().coerceAtLeast(Double.MIN_VALUE)
                 i to ln(u) / w

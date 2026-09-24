@@ -47,6 +47,18 @@ class FolderDetailViewModel @Inject constructor(
         playbackController.playTracks(all, startIndex)
     }
 
+    fun playAll() {
+        if (tracks.value.isNotEmpty()) playbackController.playTracks(tracks.value)
+    }
+
+    fun playShuffled() {
+        if (tracks.value.isNotEmpty()) playbackController.playTracksShuffled(tracks.value)
+    }
+
+    fun playSmartShuffled() {
+        if (tracks.value.isNotEmpty()) playbackController.playTracksSmartShuffled(tracks.value)
+    }
+
     fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)
 
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)

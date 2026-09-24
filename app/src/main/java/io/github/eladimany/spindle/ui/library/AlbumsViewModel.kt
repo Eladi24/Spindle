@@ -12,15 +12,21 @@ import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.library.LibraryRepository
 import io.github.eladimany.spindle.data.library.toDomain
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 import javax.inject.Inject
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 
 @HiltViewModel
 class AlbumsViewModel @Inject constructor(
     libraryRepository: LibraryRepository,
     private val artworkRepository: ArtworkRepository,
 ) : ViewModel() {
+    val albumCount: StateFlow<Int?> = libraryRepository.albumCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     val albums: Flow<PagingData<Album>> =
         Pager(PagingConfig(pageSize = 60, enablePlaceholders = false)) {
             libraryRepository.albumsPagingSource()

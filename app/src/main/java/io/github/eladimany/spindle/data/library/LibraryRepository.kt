@@ -15,6 +15,7 @@ import io.github.eladimany.spindle.core.model.TrackSort
 import io.github.eladimany.spindle.data.db.dao.AlbumDao
 import io.github.eladimany.spindle.data.db.dao.ArtistDao
 import io.github.eladimany.spindle.data.db.dao.FolderDao
+import io.github.eladimany.spindle.data.db.dao.LibraryStats
 import io.github.eladimany.spindle.data.db.dao.TrackDao
 import io.github.eladimany.spindle.data.db.entity.AlbumEntity
 import io.github.eladimany.spindle.data.db.entity.ArtistEntity
@@ -43,6 +44,9 @@ class LibraryRepository @Inject constructor(
     val tracks: Flow<List<Track>> = trackDao.observeAll().map { list -> list.map { it.toDomain() } }
     val albums: Flow<List<Album>> = albumDao.observeAll().map { list -> list.map { it.toDomain() } }
     val artists: Flow<List<Artist>> = artistDao.observeAll().map { list -> list.map { it.toDomain() } }
+    val libraryStats: Flow<LibraryStats> = trackDao.observeStats()
+    val albumCount: Flow<Int> = albumDao.observeCount()
+    val artistCount: Flow<Int> = artistDao.observeCount()
 
     /** Every folder MediaStore found, flagged with whether it's excluded from the library. */
     val folders: Flow<List<Folder>> = combine(folderDao.observeAll(), settings.excludedFolderIds) { folders, excluded ->

@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import io.github.eladimany.spindle.ui.components.SectionAnchor
 import io.github.eladimany.spindle.ui.components.sectionAnchors
+import io.github.eladimany.spindle.ui.components.countLabel
+import io.github.eladimany.spindle.ui.components.durationLabel
 import javax.inject.Inject
 
 @HiltViewModel
@@ -39,6 +41,11 @@ class TracksViewModel @Inject constructor(
 
     val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
     val isPlaying: StateFlow<Boolean> = playbackController.isPlaying
+
+    /** "1,284 tracks · 86 h" under the tab title. */
+    val summary: StateFlow<String?> = libraryRepository.libraryStats
+        .map { "${countLabel(it.trackCount, "track")} · ${durationLabel(it.totalDurationMs, hoursOnly = true)}" }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     // A-Z + '#' fast-scroll anchors. Only meaningful while sorted by title — the screen
     // hides the index strip otherwise, since these positions won't line up with any other order.
@@ -64,6 +71,14 @@ class TracksViewModel @Inject constructor(
             val all = libraryRepository.allTracksSorted(sort.value)
             val startIndex = all.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
             playbackController.playTracks(all, startIndex)
+        }
+    }
+
+    /** Plays the whole library in the current sort order, from the top. */
+    fun playAll() {
+        viewModelScope.launch {
+            val all = libraryRepository.allTracksSorted(sort.value)
+            if (all.isNotEmpty()) playbackController.playTracks(all)
         }
     }
 

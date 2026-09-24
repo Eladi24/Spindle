@@ -182,6 +182,36 @@ class QueueManager {
         }
     }
 
+    /**
+     * Back to the top of the queue after it has played out. A shuffled queue gets a
+     * fresh order from [orderer] (a new shuffle, or a new smart shuffle); an unshuffled
+     * one keeps its order, including any moves the user made.
+     */
+    fun restart(orderer: ShuffleOrderer = ShuffleOrderer.RANDOM) {
+        if (order.isEmpty()) return
+        if (shuffleMode != ShuffleMode.OFF) {
+            val slots = order.toList()
+            order = orderer.order(slots.map { items[it] }, null).map { slots[it] }.toMutableList()
+        }
+        position = 0
+    }
+
+    /**
+     * Undo for [remove]: puts a removed item back at [index] in the play order.
+     * [remove] only drops it from the order, so the item itself is still here.
+     */
+    fun restore(queueItemId: String, index: Int) {
+        val itemIndex = items.indexOfFirst { it.id == queueItemId }
+        if (itemIndex == -1 || itemIndex in order) return
+        val at = index.coerceIn(0, order.size)
+        order.add(at, itemIndex)
+        position = when {
+            position == -1 -> 0
+            at <= position -> position + 1
+            else -> position
+        }
+    }
+
     fun remove(queueItemId: String) {
         val idx = order.indexOfFirst { items[it].id == queueItemId }
         if (idx == -1) return

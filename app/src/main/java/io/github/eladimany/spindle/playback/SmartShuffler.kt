@@ -24,6 +24,7 @@ class SmartShuffler @Inject constructor(
 
     suspend fun orderer(): QueueManager.ShuffleOrderer {
         val rules = settings.smartShuffleRules.first()
+        val boosted = settings.boostedTrackKeys.first()
         val stats = withContext(Dispatchers.IO) {
             dao.statsByTrackKey().associate {
                 it.trackKey to TrackStats(it.plays, it.fullListens, it.skips, it.lastPlayedMs)
@@ -31,7 +32,7 @@ class SmartShuffler @Inject constructor(
         }
         val now = System.currentTimeMillis()
         return QueueManager.ShuffleOrderer { items, pinnedFirst ->
-            SmartShuffle.order(items, stats, { trackKey(it.track) }, rules, now, pinnedFirst)
+            SmartShuffle.order(items, stats, { trackKey(it.track) }, rules, now, pinnedFirst, boostedKeys = boosted)
         }
     }
 }

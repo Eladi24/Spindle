@@ -42,6 +42,9 @@ class ArtistsViewModel @Inject constructor(
         .map { artists -> sectionAnchors(artists) { it.name } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    val artistCount: StateFlow<Int?> = libraryRepository.artistCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     val artworkByArtistId: StateFlow<Map<Long, String>> = artistArtworkRepository.artworkByArtistId
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 

@@ -51,6 +51,14 @@ class AlbumDetailViewModel @Inject constructor(
         playbackController.playTracks(tracks.value)
     }
 
+    fun playShuffled() {
+        if (tracks.value.isNotEmpty()) playbackController.playTracksShuffled(tracks.value)
+    }
+
+    fun playSmartShuffled() {
+        if (tracks.value.isNotEmpty()) playbackController.playTracksSmartShuffled(tracks.value)
+    }
+
     fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)
 
     suspend fun artworkUriForAlbum(album: Album): String? = artworkRepository.artworkUriForAlbum(album)
