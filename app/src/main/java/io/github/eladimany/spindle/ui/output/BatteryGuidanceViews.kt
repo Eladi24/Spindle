@@ -28,19 +28,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import io.github.eladimany.spindle.ui.components.glow
 
 // A caution tone the Material scheme doesn't have — amber, not error red: nothing
 // is broken yet, it just might stop later. Darker in light theme for contrast.
@@ -276,20 +272,3 @@ private fun RadioPreview(label: String, selected: Boolean) {
         )
     }
 }
-
-/** A soft coloured halo behind the element — the same shadow-layer trick as the nav bar's active-tab line. */
-private fun Modifier.glow(color: Color, radius: Dp, cornerRadius: Dp) =
-    drawBehind {
-        drawIntoCanvas { canvas ->
-            val paint = Paint()
-            paint.asFrameworkPaint().apply {
-                this.color = android.graphics.Color.TRANSPARENT
-                setShadowLayer(radius.toPx(), 0f, 0f, color.toArgb())
-            }
-            canvas.drawRoundRect(
-                0f, 0f, size.width, size.height,
-                cornerRadius.toPx(), cornerRadius.toPx(),
-                paint,
-            )
-        }
-    }

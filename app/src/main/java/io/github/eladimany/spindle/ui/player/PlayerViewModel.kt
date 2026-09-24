@@ -39,7 +39,16 @@ class PlayerViewModel @Inject constructor(
     fun jumpTo(queueItemId: String) = controller.jumpTo(queueItemId)
     fun removeFromQueue(queueItemId: String) = controller.remove(queueItemId)
     fun moveInQueue(from: Int, to: Int) = controller.move(from, to)
-    fun setShuffled(enabled: Boolean) = controller.setShuffled(enabled)
+    /** Off → Shuffle → Smart → Off. Returns the new mode, for the button's pop-up label. */
+    fun cycleShuffleMode(): QueueManager.ShuffleMode {
+        val next = when (queueState.value.shuffleMode) {
+            QueueManager.ShuffleMode.OFF -> QueueManager.ShuffleMode.SHUFFLE
+            QueueManager.ShuffleMode.SHUFFLE -> QueueManager.ShuffleMode.SMART
+            QueueManager.ShuffleMode.SMART -> QueueManager.ShuffleMode.OFF
+        }
+        controller.setShuffleMode(next)
+        return next
+    }
     fun setVolume(percent: Int) = controller.setVolume(percent)
 
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)

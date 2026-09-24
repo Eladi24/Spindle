@@ -11,6 +11,23 @@ import io.github.eladimany.spindle.core.model.QueueItem
  */
 class QueueManager {
     enum class RepeatMode { OFF, ALL, ONE }
+    enum class ShuffleMode { OFF, SHUFFLE, SMART }
+
+    /**
+     * Builds a play order (indices into [items]) — [pinnedFirst], if given, must come
+     * first. Plain shuffle is [RANDOM]; smart shuffle's orderer is built by
+     * PlaybackController from listening history (see SmartShuffle).
+     */
+    fun interface ShuffleOrderer {
+        fun order(items: List<QueueItem>, pinnedFirst: Int?): List<Int>
+
+        companion object {
+            val RANDOM = ShuffleOrderer { items, pinnedFirst ->
+                val rest = items.indices.filter { it != pinnedFirst }.shuffled()
+                listOfNotNull(pinnedFirst) + rest
+            }
+        }
+    }
 
     private val items = mutableListOf<QueueItem>()
     private var order = mutableListOf<Int>()
@@ -19,8 +36,10 @@ class QueueManager {
     var repeatMode: RepeatMode = RepeatMode.OFF
         private set
 
-    var isShuffled = false
+    var shuffleMode = ShuffleMode.OFF
         private set
+
+    val isShuffled: Boolean get() = shuffleMode != ShuffleMode.OFF
 
     val size: Int get() = order.size
     val currentIndex: Int get() = position
@@ -31,18 +50,22 @@ class QueueManager {
         items.clear()
         items.addAll(newItems)
         order = items.indices.toMutableList()
-        isShuffled = false
+        shuffleMode = ShuffleMode.OFF
         position = if (items.isEmpty()) -1 else startIndex.coerceIn(0, items.size - 1)
     }
 
     /** Like [setQueue], but the play order is shuffled up front and playback starts
      * at the first slot of that shuffled order — for "Shuffle All", where there's no
      * "currently playing track" yet to preserve, unlike [setShuffled]. */
-    fun setQueueShuffled(newItems: List<QueueItem>) {
+    fun setQueueShuffled(
+        newItems: List<QueueItem>,
+        mode: ShuffleMode = ShuffleMode.SHUFFLE,
+        orderer: ShuffleOrderer = ShuffleOrderer.RANDOM,
+    ) {
         items.clear()
         items.addAll(newItems)
-        order = items.indices.toMutableList().apply { shuffle() }
-        isShuffled = true
+        order = orderer.order(items.toList(), null).toMutableList()
+        shuffleMode = mode
         position = if (items.isEmpty()) -1 else 0
     }
 
@@ -77,13 +100,17 @@ class QueueManager {
      * everything including the current track and leaving it wherever it lands. Turning
      * shuffle off restores the original order and finds where the current track sits in it.
      */
-    fun setShuffled(enabled: Boolean) {
-        if (enabled == isShuffled) return
-        isShuffled = enabled
-        if (enabled) {
+    fun setShuffled(enabled: Boolean) =
+        setShuffleMode(if (enabled) ShuffleMode.SHUFFLE else ShuffleMode.OFF)
+
+    /** Same as [setShuffled], for all three modes. Shuffle ↔ smart reorders again,
+     * still keeping the current track first. */
+    fun setShuffleMode(mode: ShuffleMode, orderer: ShuffleOrderer = ShuffleOrderer.RANDOM) {
+        if (mode == shuffleMode) return
+        shuffleMode = mode
+        if (mode != ShuffleMode.OFF) {
             val currentIndex = order.getOrNull(position)
-            val rest = items.indices.filter { it != currentIndex }.toMutableList().apply { shuffle() }
-            order = if (currentIndex != null) (listOf(currentIndex) + rest).toMutableList() else rest
+            order = orderer.order(items.toList(), currentIndex).toMutableList()
             position = if (order.isEmpty()) -1 else 0
         } else {
             val currentId = currentItem?.id

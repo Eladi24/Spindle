@@ -76,6 +76,15 @@ class TracksViewModel @Inject constructor(
         }
     }
 
+    /** Like [shuffleAll], ordered by smart shuffle (history + the user's rules). */
+    fun smartShuffleAll() {
+        viewModelScope.launch {
+            val all = libraryRepository.allTracksSorted(sort.value)
+            if (all.isEmpty()) return@launch
+            playbackController.playTracksSmartShuffled(all)
+        }
+    }
+
     fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)
 
     suspend fun artworkUriFor(track: Track): String? = artworkRepository.artworkUriFor(track)

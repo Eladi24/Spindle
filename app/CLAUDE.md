@@ -1283,7 +1283,7 @@ Watch the conversation's context budget. If a session has been running long
 proactively tell the user it's getting full and this is a good point to wrap up —
 don't wait for things to visibly degrade first. Raised 2026-09-22.
 
-## Smart shuffle + AI playlists — direction agreed 2026-09-23 (not built yet)
+## Smart shuffle + AI playlists — direction agreed 2026-09-23 (smart shuffle built 2026-09-24)
 
 Raised 2026-09-22 as a deferred discussion; direction agreed with the user
 2026-09-23. **Order: finish Phase 3 first, then design these** (mockups before UI,
@@ -1317,6 +1317,37 @@ Agreed design direction:
   (Phase 4).
 - Optional later: on-device audio analysis (tempo/energy) — only while charging +
   idle, incrementally; ~1–2 MB of features. Not in the first version.
+
+### Smart shuffle — built 2026-09-24
+
+From the "Spindle smart shuffle" mockup canvas; the user picked A + B + C and held D
+(per-track "why" tags in the queue — revisit once there's a few weeks of history).
+- **`SmartShuffle`** (playback/, pure, `SmartShuffleTest`): weighted shuffle
+  (Efraimidis–Spirakis, `ln(u)/w`) so every track still plays exactly once, then
+  `spread()`. Weights: no history = 1; favourites ×(1 + 2·fullListens/plays); often
+  skipped (skips ≥ half of plays) ×0.25 — both only from 2+ plays; rediscover ×2 if
+  unheard 60+ days, ×0.5 if heard in the last day.
+- **`spread()` is not plain greedy** — greedy left one artist's leftovers bunched at
+  the end even when an alternating order existed (caught by the test). Each slot takes
+  the earliest non-clashing track (artist *or* album), but an artist needing every
+  other remaining slot (`count * 2 > remaining`) goes first.
+- **History summary:** `PlayEventDao.statsByTrackKey()` — full listen = ≥80% heard,
+  skip = SKIPPED before half (listenedMs, not endReason alone). Keyed by `trackKey`.
+- **`QueueManager.ShuffleMode` OFF/SHUFFLE/SMART** with a pluggable `ShuffleOrderer`
+  (plain shuffle = `RANDOM`, unchanged behaviour; `isShuffled` is derived). Shuffle ↔
+  smart reorders with the current track pinned first; OFF restores the original order.
+  `SmartShuffler` loads rules + stats (IO) and returns the orderer, so
+  `PlaybackController.setShuffleMode(SMART)` / `playTracksSmartShuffled` launch.
+- **Rules** (4 booleans, default on) in `SettingsRepository.smartShuffleRules`; they
+  apply from the next smart shuffle, not to the queue already playing.
+- **UI:** Now Playing's shuffle button cycles Off → Shuffle → Smart (`ShuffleModeButton`,
+  sparkle badge + tinted circle when smart, the new mode's name for 1.5 s per tap);
+  Tracks has "Shuffle all" + "Smart shuffle" pills. The mode label pops up centred
+  in the time row (overlaid via `matchParentSize` + unbounded) — next to the button
+  it covered the elapsed time. **Long-press** either smart
+  control → `SmartShuffleSheet` (ui/shuffle/). `SparkleIcon` and `Modifier.glow`
+  live in ui/components. Checked on the A73: pills, sheet (reads the real listen
+  count; rule changes persist), button cycle, label placement.
 
 ### Play history logging — built 2026-09-23
 

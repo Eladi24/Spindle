@@ -123,6 +123,40 @@ class QueueManagerTest {
         assertEquals("q2", manager.queue.first().id)
     }
 
+    // Reverse order, but honouring the pin — enough to see which orderer ran.
+    private val reversing = QueueManager.ShuffleOrderer { items, pinned ->
+        listOfNotNull(pinned) + items.indices.reversed().filter { it != pinned }
+    }
+
+    @Test
+    fun `smart mode uses its orderer and keeps the current track first`() {
+        manager.next() // q2
+        manager.setShuffleMode(QueueManager.ShuffleMode.SMART, reversing)
+        assertEquals(QueueManager.ShuffleMode.SMART, manager.shuffleMode)
+        assertEquals(listOf("q2", "q5", "q4", "q3", "q1"), manager.queue.map { it.id })
+        assertEquals("q2", manager.currentItem?.id)
+    }
+
+    @Test
+    fun `switching shuffle to smart reorders, and off restores the original order`() {
+        manager.next() // q2
+        manager.setShuffleMode(QueueManager.ShuffleMode.SHUFFLE)
+        manager.setShuffleMode(QueueManager.ShuffleMode.SMART, reversing)
+        assertEquals(listOf("q2", "q5", "q4", "q3", "q1"), manager.queue.map { it.id })
+
+        manager.setShuffleMode(QueueManager.ShuffleMode.OFF)
+        assertEquals(fixture.map { it.id }, manager.queue.map { it.id })
+        assertEquals("q2", manager.currentItem?.id)
+    }
+
+    @Test
+    fun `setQueueShuffled in smart mode starts on the orderer's first track`() {
+        manager.setQueueShuffled(fixture, QueueManager.ShuffleMode.SMART, reversing)
+        assertEquals(QueueManager.ShuffleMode.SMART, manager.shuffleMode)
+        assertEquals("q5", manager.currentItem?.id)
+        assertEquals(0, manager.currentIndex)
+    }
+
     @Test
     fun `move reorders the queue and keeps the current item pointer correct`() {
         manager.next() // position 1, q2

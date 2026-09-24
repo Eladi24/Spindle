@@ -25,8 +25,10 @@ data class QueueState(
     val items: List<QueueItem> = emptyList(),
     val currentIndex: Int = -1,
     val repeatMode: QueueManager.RepeatMode = QueueManager.RepeatMode.OFF,
-    val isShuffled: Boolean = false,
-)
+    val shuffleMode: QueueManager.ShuffleMode = QueueManager.ShuffleMode.OFF,
+) {
+    val isShuffled: Boolean get() = shuffleMode != QueueManager.ShuffleMode.OFF
+}
 
 /**
  * Coordinates a [QueueManager] and one active [AudioOutput]. Deliberately doesn't know
@@ -36,6 +38,7 @@ data class QueueState(
 class PlaybackController @Inject constructor(
     private val output: AudioOutput,
     private val history: PlayHistoryRecorder,
+    private val smartShuffler: SmartShuffler,
     @ApplicationContext private val context: Context,
 ) {
     private val queueManager = QueueManager()
@@ -98,6 +101,21 @@ class PlaybackController @Inject constructor(
         queueManager.currentItem?.let { playItem(it) }
     }
 
+    /** "Smart shuffle" on the Tracks tab: like [playTracksShuffled], ordered from
+     * listening history (see SmartShuffle). The history read takes a few ms on IO. */
+    fun playTracksSmartShuffled(tracks: List<Track>) {
+        scope.launch {
+            val orderer = smartShuffler.orderer()
+            queueManager.setQueueShuffled(
+                tracks.map { QueueItem(id = "q${it.id}", track = it) },
+                QueueManager.ShuffleMode.SMART,
+                orderer,
+            )
+            refreshQueueState()
+            queueManager.currentItem?.let { playItem(it) }
+        }
+    }
+
     /** Appends [tracks] to the end of the current queue without interrupting playback.
      * Each slot gets a fresh id — [tracks] may already include the track(s) playing now. */
     fun addToQueue(tracks: List<Track>) {
@@ -143,9 +161,17 @@ class PlaybackController @Inject constructor(
         refreshQueueState()
     }
 
-    fun setShuffled(enabled: Boolean) {
-        queueManager.setShuffled(enabled)
-        refreshQueueState()
+    fun setShuffleMode(mode: QueueManager.ShuffleMode) {
+        if (mode != QueueManager.ShuffleMode.SMART) {
+            queueManager.setShuffleMode(mode)
+            refreshQueueState()
+            return
+        }
+        scope.launch {
+            val orderer = smartShuffler.orderer()
+            queueManager.setShuffleMode(mode, orderer)
+            refreshQueueState()
+        }
     }
 
     fun setRepeatMode(mode: QueueManager.RepeatMode) {
@@ -192,7 +218,7 @@ class PlaybackController @Inject constructor(
             items = queueManager.queue,
             currentIndex = queueManager.currentIndex,
             repeatMode = queueManager.repeatMode,
-            isShuffled = queueManager.isShuffled,
+            shuffleMode = queueManager.shuffleMode,
         )
     }
 

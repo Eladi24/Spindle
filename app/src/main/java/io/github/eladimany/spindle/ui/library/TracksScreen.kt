@@ -1,6 +1,9 @@
 package io.github.eladimany.spindle.ui.library
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -25,7 +29,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -36,6 +39,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -46,9 +51,12 @@ import io.github.eladimany.spindle.core.model.TrackSort
 import io.github.eladimany.spindle.ui.components.AlphabetIndexBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.ScrubLetterBubble
+import io.github.eladimany.spindle.ui.components.SparkleIcon
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
+import io.github.eladimany.spindle.ui.components.glow
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
+import io.github.eladimany.spindle.ui.shuffle.SmartShuffleSheet
 import kotlinx.coroutines.launch
 
 @Composable
@@ -66,6 +74,10 @@ fun TracksScreen(
     var actionsTarget by remember { mutableStateOf<List<Track>?>(null) }
     var scrubLetter by remember { mutableStateOf<Char?>(null) }
     val listState = rememberLazyListState()
+    var showSmartShuffleSheet by remember { mutableStateOf(false) }
+    if (showSmartShuffleSheet) {
+        SmartShuffleSheet(onDismiss = { showSmartShuffleSheet = false })
+    }
     val tapGuard = rememberScrollTapGuard(listState)
     val scope = rememberCoroutineScope()
     // The list has a "Shuffle All" header before the tracks, so a section's position
@@ -116,7 +128,11 @@ fun TracksScreen(
                 contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
             ) {
                 item {
-                    ShuffleAllRow(onClick = tapGuard.guard(viewModel::shuffleAll))
+                    ShuffleRow(
+                        onShuffle = tapGuard.guard(viewModel::shuffleAll),
+                        onSmartShuffle = tapGuard.guard(viewModel::smartShuffleAll),
+                        onSmartShuffleSettings = { showSmartShuffleSheet = true },
+                    )
                 }
                 items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
                     val track = tracks[index]
@@ -170,35 +186,66 @@ fun TracksScreen(
     }
 }
 
-// A flat tonal pill with a hairline border, not a filled gradient — a bright gradient
+// Flat tonal pills with a hairline border, not a filled gradient — a bright gradient
 // button here read as "cheap" against the rest of the list (see the UI refresh concepts
-// board's revised, darker Tracks mockup).
+// board's revised, darker Tracks mockup). Smart shuffle gets the one accent: a stronger
+// border and a soft glow, same "shine without gloss" as the nav bar.
 @Composable
-private fun ShuffleAllRow(onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
+private fun ShuffleRow(
+    onShuffle: () -> Unit,
+    onSmartShuffle: () -> Unit,
+    onSmartShuffleSettings: () -> Unit,
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val shape = RoundedCornerShape(24.dp)
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .clip(shape)
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .border(1.dp, primary.copy(alpha = 0.18f), shape)
+                .clickable(role = Role.Button, onClick = onShuffle),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Icon(
-                Icons.Default.Shuffle,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-            )
+            Icon(Icons.Default.Shuffle, contentDescription = null, tint = primary, modifier = Modifier.size(20.dp))
             Text(
-                "Shuffle All",
+                "Shuffle all",
                 style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(start = 10.dp),
+                color = primary,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .height(48.dp)
+                .glow(primary.copy(alpha = 0.18f), radius = 16.dp, cornerRadius = 24.dp)
+                .clip(shape)
+                .background(primary.copy(alpha = 0.12f))
+                .border(1.dp, primary.copy(alpha = 0.45f), shape)
+                .combinedClickable(
+                    role = Role.Button,
+                    onLongClickLabel = "Smart shuffle settings",
+                    onLongClick = onSmartShuffleSettings,
+                    onClick = onSmartShuffle,
+                ),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(SparkleIcon, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+            Text(
+                "Smart shuffle",
+                style = MaterialTheme.typography.titleSmall,
+                color = primary,
+                modifier = Modifier.padding(start = 8.dp),
             )
         }
     }

@@ -2,10 +2,12 @@ package io.github.eladimany.spindle.ui.player
 
 import android.os.VibrationEffect
 import android.os.Vibrator
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -19,8 +21,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
@@ -59,6 +64,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -66,10 +75,13 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.playback.QueueManager
+import io.github.eladimany.spindle.ui.components.SparkleIcon
 import io.github.eladimany.spindle.ui.components.TrackArtwork
+import io.github.eladimany.spindle.ui.components.glow
 import io.github.eladimany.spindle.ui.output.OutputPickerSheet
 import io.github.eladimany.spindle.ui.output.displayName
 import io.github.eladimany.spindle.ui.playlists.AddToPlaylistSheet
+import io.github.eladimany.spindle.ui.shuffle.SmartShuffleSheet
 import kotlinx.coroutines.delay
 
 // The hero backdrop is intentionally always this dark violet gradient, independent of
@@ -105,6 +117,20 @@ fun NowPlayingScreen(
     var showOutputPicker by remember { mutableStateOf(false) }
     if (showOutputPicker) {
         OutputPickerSheet(onDismiss = { showOutputPicker = false })
+    }
+    // Each tap on the shuffle button names the new mode for a moment — the icon
+    // alone can't tell "shuffle" from "smart" at a glance.
+    var shuffleLabel by remember { mutableStateOf<String?>(null) }
+    var shuffleLabelTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(shuffleLabelTick) {
+        if (shuffleLabel != null) {
+            delay(1500)
+            shuffleLabel = null
+        }
+    }
+    var showSmartShuffleSheet by remember { mutableStateOf(false) }
+    if (showSmartShuffleSheet) {
+        SmartShuffleSheet(onDismiss = { showSmartShuffleSheet = false })
     }
 
     val item = when (val s = playbackState) {
@@ -297,9 +323,23 @@ fun NowPlayingScreen(
                     },
                     colors = heroSliderColors(),
                 )
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(formatDuration(displayPositionMs.toLong()), style = MaterialTheme.typography.labelSmall, color = HeroOnBackdropFaint)
-                    Text(formatDuration(durationMs), style = MaterialTheme.typography.labelSmall, color = HeroOnBackdropFaint)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(formatDuration(displayPositionMs.toLong()), style = MaterialTheme.typography.labelSmall, color = HeroOnBackdropFaint)
+                        Text(formatDuration(durationMs), style = MaterialTheme.typography.labelSmall, color = HeroOnBackdropFaint)
+                    }
+                    // The shuffle mode's name, briefly, in the empty middle of the time
+                    // row — overlaid (matchParentSize + unbounded) so nothing shifts.
+                    Box(modifier = Modifier.matchParentSize(), contentAlignment = Alignment.Center) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = shuffleLabel != null,
+                            enter = fadeIn(),
+                            exit = fadeOut(),
+                            modifier = Modifier.wrapContentSize(unbounded = true),
+                        ) {
+                            ShuffleModeLabel(text = shuffleLabel.orEmpty(), smart = queueState.shuffleMode == QueueManager.ShuffleMode.SMART)
+                        }
+                    }
                 }
             }
 
@@ -308,13 +348,18 @@ fun NowPlayingScreen(
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { viewModel.setShuffled(!queueState.isShuffled) }, colors = heroIconButtonColors()) {
-                    Icon(
-                        Icons.Default.Shuffle,
-                        contentDescription = "Shuffle",
-                        tint = if (queueState.isShuffled) HeroAccent else HeroOnBackdropMuted,
-                    )
-                }
+                ShuffleModeButton(
+                    mode = queueState.shuffleMode,
+                    onClick = {
+                        shuffleLabel = when (viewModel.cycleShuffleMode()) {
+                            QueueManager.ShuffleMode.OFF -> "Shuffle off"
+                            QueueManager.ShuffleMode.SHUFFLE -> "Shuffle"
+                            QueueManager.ShuffleMode.SMART -> "Smart shuffle"
+                        }
+                        shuffleLabelTick++
+                    },
+                    onLongPress = { showSmartShuffleSheet = true },
+                )
                 IconButton(onClick = viewModel::previous, colors = heroIconButtonColors()) {
                     Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = HeroOnBackdrop, modifier = Modifier.size(30.dp))
                 }
@@ -351,6 +396,79 @@ fun NowPlayingScreen(
         AddToPlaylistSheet(trackIds = listOf(item.track.id), onDismiss = { showAddToPlaylist = false })
     }
 
+}
+
+/** Off → Shuffle → Smart. A plain IconButton has no long-press, and long-press opens the Smart shuffle sheet. */
+@Composable
+private fun ShuffleModeButton(
+    mode: QueueManager.ShuffleMode,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    val isSmart = mode == QueueManager.ShuffleMode.SMART
+    val description = when (mode) {
+        QueueManager.ShuffleMode.OFF -> "Shuffle: off"
+        QueueManager.ShuffleMode.SHUFFLE -> "Shuffle: on"
+        QueueManager.ShuffleMode.SMART -> "Shuffle: smart"
+    }
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .then(
+                if (isSmart) {
+                    Modifier
+                        .background(HeroAccent.copy(alpha = 0.12f))
+                        .border(1.dp, HeroAccent.copy(alpha = 0.35f), CircleShape)
+                } else {
+                    Modifier
+                },
+            )
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "Change shuffle mode",
+                onLongClickLabel = "Smart shuffle settings",
+                onLongClick = onLongPress,
+                onClick = onClick,
+            )
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            Icons.Default.Shuffle,
+            contentDescription = null,
+            tint = if (mode == QueueManager.ShuffleMode.OFF) HeroOnBackdropMuted else HeroAccent,
+        )
+        if (isSmart) {
+            Icon(
+                SparkleIcon,
+                contentDescription = null,
+                tint = HeroOnBackdrop,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 8.dp, end = 9.dp)
+                    .size(10.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShuffleModeLabel(text: String, smart: Boolean) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .glow(HeroAccent.copy(alpha = 0.25f), radius = 14.dp, cornerRadius = 14.dp)
+            .clip(shape)
+            .background(Color(0xD9141228))
+            .border(1.dp, HeroAccent.copy(alpha = 0.35f), shape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (smart) Icon(SparkleIcon, contentDescription = null, tint = HeroAccent, modifier = Modifier.size(12.dp))
+        Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = HeroOnBackdrop)
+    }
 }
 
 @Composable
