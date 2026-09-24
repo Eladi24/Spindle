@@ -43,6 +43,7 @@ import io.github.eladimany.spindle.ui.components.AlbumArtwork
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
+import io.github.eladimany.spindle.ui.components.countLabel
 
 @Composable
 fun SearchScreen(
@@ -65,7 +66,7 @@ fun SearchScreen(
                     TextField(
                         value = query,
                         onValueChange = viewModel::setQuery,
-                        placeholder = { Text("Search artists, albums, tracks") },
+                        placeholder = { Text(viewModel.scope.placeholder) },
                         singleLine = true,
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         trailingIcon = {
@@ -116,13 +117,13 @@ fun SearchScreen(
                 contentPadding = PaddingValues(bottom = LocalBottomOverlayPadding.current),
             ) {
                 if (results.artists.isNotEmpty()) {
-                    item { SectionHeader("Artists") }
+                    if (viewModel.scope == SearchScope.ALL) item { SectionHeader("Artists") }
                     items(results.artists, key = { "artist${it.id}" }) { artist ->
                         ArtistResultRow(artist, onClick = { onArtistClick(artist.id) })
                     }
                 }
                 if (results.albums.isNotEmpty()) {
-                    item { SectionHeader("Albums") }
+                    if (viewModel.scope == SearchScope.ALL) item { SectionHeader("Albums") }
                     items(results.albums, key = { "album${it.id}" }) { album ->
                         AlbumResultRow(
                             album,
@@ -132,7 +133,7 @@ fun SearchScreen(
                     }
                 }
                 if (results.tracks.isNotEmpty()) {
-                    item { SectionHeader("Tracks") }
+                    if (viewModel.scope == SearchScope.ALL) item { SectionHeader("Tracks") }
                     items(results.tracks, key = { "track${it.id}" }) { track ->
                         TrackRow(
                             track = track,
@@ -186,7 +187,7 @@ private fun ArtistResultRow(artist: Artist, onClick: () -> Unit) {
         Column(modifier = Modifier.padding(start = 12.dp)) {
             Text(artist.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                "${artist.albumCount} albums · ${artist.trackCount} tracks",
+                "${countLabel(artist.albumCount, "album")} · ${countLabel(artist.trackCount, "track")}",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

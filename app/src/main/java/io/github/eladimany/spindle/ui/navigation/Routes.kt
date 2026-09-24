@@ -1,5 +1,7 @@
 package io.github.eladimany.spindle.ui.navigation
 
+import io.github.eladimany.spindle.ui.search.SearchScope
+
 object Routes {
     const val TRACKS = "tracks"
     const val ARTISTS = "artists"
@@ -8,7 +10,8 @@ object Routes {
     const val PLAYLISTS = "playlists"
     const val MANAGE_FOLDERS = "manage_folders"
     const val QUEUE = "queue"
-    const val SEARCH = "search"
+    const val SEARCH_PATTERN = "search?scope={scope}"
+    fun search(scope: SearchScope = SearchScope.ALL) = "search?scope=${scope.name}"
     const val PLAYLIST_DRAFT = "playlist_draft"
     const val AI_SETTINGS = "ai_settings"
 

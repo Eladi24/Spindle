@@ -71,6 +71,7 @@ import io.github.eladimany.spindle.ui.player.PlayerViewModel
 import io.github.eladimany.spindle.ui.player.QueueScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistDetailScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistsScreen
+import io.github.eladimany.spindle.ui.search.SearchScope
 import io.github.eladimany.spindle.ui.search.SearchScreen
 import io.github.eladimany.spindle.ui.smartplaylists.AiSettingsScreen
 import io.github.eladimany.spindle.ui.smartplaylists.DraftPlaylistScreen
@@ -199,13 +200,13 @@ fun AppNavHost() {
                         .consumeWindowInsets(innerPadding),
                 ) {
                     composable(Routes.TRACKS) {
-                        TracksScreen(onSearchClick = { navController.navigate(Routes.SEARCH) })
+                        TracksScreen(onSearchClick = { navController.navigate(Routes.search(SearchScope.TRACKS)) })
                     }
 
                     composable(Routes.ARTISTS) {
                         ArtistsScreen(
                             onArtistClick = { navController.navigate(Routes.artistDetail(it)) },
-                            onSearchClick = { navController.navigate(Routes.SEARCH) },
+                            onSearchClick = { navController.navigate(Routes.search(SearchScope.ARTISTS)) },
                         )
                     }
                     composable(
@@ -221,7 +222,7 @@ fun AppNavHost() {
                     composable(Routes.ALBUMS) {
                         AlbumsScreen(
                             onAlbumClick = { navController.navigate(Routes.albumDetail(it)) },
-                            onSearchClick = { navController.navigate(Routes.SEARCH) },
+                            onSearchClick = { navController.navigate(Routes.search(SearchScope.ALBUMS)) },
                         )
                     }
                     composable(
@@ -235,7 +236,7 @@ fun AppNavHost() {
                         FolderBrowseScreen(
                             onFolderClick = { navController.navigate(Routes.folderDetail(it)) },
                             onManageFolders = { navController.navigate(Routes.MANAGE_FOLDERS) },
-                            onSearchClick = { navController.navigate(Routes.SEARCH) },
+                            onSearchClick = { navController.navigate(Routes.search()) },
                         )
                     }
                     composable(
@@ -248,7 +249,7 @@ fun AppNavHost() {
                     composable(Routes.PLAYLISTS) {
                         PlaylistsScreen(
                             onPlaylistClick = { navController.navigate(Routes.playlistDetail(it)) },
-                            onSearchClick = { navController.navigate(Routes.SEARCH) },
+                            onSearchClick = { navController.navigate(Routes.search()) },
                             onDraftMade = { navController.navigate(Routes.PLAYLIST_DRAFT) },
                             onOpenAiSettings = { navController.navigate(Routes.AI_SETTINGS) },
                         )
@@ -279,7 +280,10 @@ fun AppNavHost() {
                         QueueScreen(onBack = { navController.popBackStack() }, viewModel = playerViewModel)
                     }
 
-                    composable(Routes.SEARCH) {
+                    composable(
+                        Routes.SEARCH_PATTERN,
+                        arguments = listOf(navArgument("scope") { type = NavType.StringType; defaultValue = SearchScope.ALL.name }),
+                    ) {
                         SearchScreen(
                             onBack = { navController.popBackStack() },
                             onArtistClick = { navController.navigate(Routes.artistDetail(it)) },

@@ -1,5 +1,6 @@
 package io.github.eladimany.spindle.ui.search
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -9,6 +10,7 @@ import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.library.LibraryRepository
 import io.github.eladimany.spindle.playback.PlaybackController
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -19,7 +21,18 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
-import javax.inject.Inject
+
+/**
+ * What a search looks through — set by the tab it was opened from: Tracks searches only
+ * tracks, Artists only artists, Albums only albums. [ALL] (Folders, Playlists) searches
+ * everything.
+ */
+enum class SearchScope(val placeholder: String) {
+    ALL("Search artists, albums, tracks"),
+    TRACKS("Search tracks"),
+    ARTISTS("Search artists"),
+    ALBUMS("Search albums"),
+}
 
 data class SearchResults(
     val artists: List<Artist> = emptyList(),
@@ -31,10 +44,15 @@ data class SearchResults(
 
 @HiltViewModel
 class SearchViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
     private val libraryRepository: LibraryRepository,
     private val playbackController: PlaybackController,
     private val artworkRepository: ArtworkRepository,
 ) : ViewModel() {
+
+    val scope: SearchScope = savedStateHandle.get<String>("scope")
+        ?.let { name -> SearchScope.entries.firstOrNull { it.name == name } }
+        ?: SearchScope.ALL
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -50,10 +68,11 @@ class SearchViewModel @Inject constructor(
             if (trimmed.isEmpty()) {
                 flowOf(SearchResults())
             } else {
+                val all = scope == SearchScope.ALL
                 combine(
-                    libraryRepository.searchArtists(trimmed),
-                    libraryRepository.searchAlbums(trimmed),
-                    libraryRepository.search(trimmed),
+                    if (all || scope == SearchScope.ARTISTS) libraryRepository.searchArtists(trimmed) else flowOf(emptyList()),
+                    if (all || scope == SearchScope.ALBUMS) libraryRepository.searchAlbums(trimmed) else flowOf(emptyList()),
+                    if (all || scope == SearchScope.TRACKS) libraryRepository.search(trimmed) else flowOf(emptyList()),
                 ) { artists, albums, tracks -> SearchResults(artists, albums, tracks) }
             }
         }

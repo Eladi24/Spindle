@@ -1547,3 +1547,13 @@ Rows 7–9 of the canvas: user picked mini-player A, the sliding player, end-of-
   past the end → finished player + mini-player, Play again (in order), Shuffle again
   (new order). The player now draws edge to edge under the status bar; the artist-photo
   strip is a separate, still-open issue (AppNavHost pads every route by the top inset).
+
+### Search scoped to the tab — 2026-09-24
+
+User request: search from a tab should only return that tab's kind of result. Route is
+now `search?scope={scope}` (`Routes.search(SearchScope.X)`); `SearchViewModel.scope`
+comes from the nav arg. Tracks → tracks, Artists → artists, Albums → albums (the box's hint
+says which, section headers hidden); Folders and Playlists still search everything
+(`SearchScope.ALL`) — no folder/playlist search exists yet. Track search still matches
+artist/album names (`TrackDao.search`). Checked on the A73 ("de" from Artists → Deep Purple
+only; from Tracks → two tracks only).
