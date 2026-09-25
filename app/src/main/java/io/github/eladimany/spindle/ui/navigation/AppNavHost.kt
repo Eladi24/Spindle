@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.snapTo
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -196,8 +197,10 @@ fun AppNavHost() {
                     startDestination = Routes.ARTISTS,
                     modifier = Modifier
                         .hazeSource(hazeState)
-                        .padding(top = innerPadding.calculateTopPadding(), bottom = if (showMiniPlayer) 0.dp else overlayBottom)
-                        .consumeWindowInsets(innerPadding),
+                        // No top padding: every screen's own top bar leaves room for the status
+                        // bar, so a screen can also draw under it (the artist photo does).
+                        .padding(bottom = if (showMiniPlayer) 0.dp else overlayBottom)
+                        .consumeWindowInsets(PaddingValues(bottom = innerPadding.calculateBottomPadding())),
                 ) {
                     composable(Routes.TRACKS) {
                         TracksScreen(onSearchClick = { navController.navigate(Routes.search(SearchScope.TRACKS)) })

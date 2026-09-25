@@ -20,3 +20,18 @@ sealed interface PlaybackState {
     data class Ended(val item: QueueItem) : PlaybackState
     data class Error(val item: QueueItem?, val message: String) : PlaybackState
 }
+
+/**
+ * How far into the track playback is right now: [PlaybackState.Playing]'s snapshot moved
+ * on by the time since it was captured, [PlaybackState.Paused]'s as is; null otherwise.
+ */
+fun PlaybackState.elapsedMs(nowMs: Long = System.currentTimeMillis()): Long? = when (this) {
+    is PlaybackState.Playing -> (positionMs + (nowMs - capturedAtMs)).coerceIn(0, durationMs.coerceAtLeast(0))
+    is PlaybackState.Paused -> positionMs
+    else -> null
+}
+
+/** "Previous" past this far into a track restarts it instead of going back a track. */
+const val RESTART_ON_PREVIOUS_AFTER_MS = 5_000L
+
+fun PlaybackState.previousRestartsTrack(): Boolean = (elapsedMs() ?: 0L) > RESTART_ON_PREVIOUS_AFTER_MS

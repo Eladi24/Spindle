@@ -7,7 +7,10 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.QueueItem
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.core.model.previousRestartsTrack
 import io.github.eladimany.spindle.data.history.PlayEndReason
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -18,8 +21,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import javax.inject.Inject
-import javax.inject.Singleton
 
 data class QueueState(
     val items: List<QueueItem> = emptyList(),
@@ -160,7 +161,16 @@ class PlaybackController @Inject constructor(
         }
     }
 
+    /**
+     * More than [RESTART_ON_PREVIOUS_AFTER_MS] into the track: back to its start (a seek,
+     * not a new listen). Otherwise the previous track — the usual music-player rule, for
+     * every "previous": the button, the mini-player swipe, lock screen and headset keys.
+     */
     fun previous() {
+        if (playbackState.value.previousRestartsTrack()) {
+            seekTo(0)
+            return
+        }
         history.endCurrent(PlayEndReason.PREVIOUS)
         queueManager.previous()?.let { playItem(it) }
     }

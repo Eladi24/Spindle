@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import io.github.eladimany.spindle.R
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.core.model.previousRestartsTrack
 import kotlin.math.abs
 import kotlin.math.sign
 import kotlinx.coroutines.delay
@@ -98,7 +99,10 @@ fun MiniPlayerBar(
     val flingVelocityPx = with(density) { 800.dp.toPx() }
     var dragOffsetPx by remember { mutableFloatStateOf(0f) }
     val hasNext = nextTrack != null
-    val hasPrevious = previousTrack != null
+    // Past 5 s, "previous" restarts this track (PlaybackController.previous), so a swipe
+    // back previews the same song and works even on the first track.
+    val restartsOnBack = playbackState.previousRestartsTrack()
+    val hasPrevious = previousTrack != null || restartsOnBack
 
     val dragState = rememberDraggableState { delta ->
         // Rubber-band resistance instead of a hard stop when there's nothing to skip
@@ -114,7 +118,7 @@ fun MiniPlayerBar(
     val progress = (dragOffsetPx / thresholdPx).coerceIn(-1f, 1f)
     val previewTrack = when {
         dragOffsetPx < 0f -> nextTrack
-        dragOffsetPx > 0f -> previousTrack
+        dragOffsetPx > 0f -> if (restartsOnBack) item.track else previousTrack
         else -> null
     }
     val direction = sign(dragOffsetPx)
