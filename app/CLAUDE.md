@@ -1557,3 +1557,37 @@ says which, section headers hidden); Folders and Playlists still search everythi
 (`SearchScope.ALL`) — no folder/playlist search exists yet. Track search still matches
 artist/album names (`TrackDao.search`). Checked on the A73 ("de" from Artists → Deep Purple
 only; from Tracks → two tracks only).
+
+### At the real Node — 2026-09-25
+
+Walked `docs/PHASE3-NODE-TESTS.md` sections 1, 2, 3a, 5a on the A73 (results at the end of
+that file). Verified on hardware: held seek until `canSeek` (no noise, lands ~+2 s),
+takeover detection (Spotify), WiFi/CPU locks, outage + reconnection, and the Node's
+`pause` state (unverified until now). Also new: `connecting` for ~0.1 s after each /Play.
+Fixed in `NodeOutput`:
+- **Seek while paused** → kept in `seekOnResumeSeconds`, sent by `resume()` as one
+  `/Play?seek` (that command also starts playback — it un-paused the Node).
+- **Natural end vs stop** judged from `_state.value.elapsedMs()`, not `lastKnownSecs`
+  (the Node reports secs only on changes; after a late seek it was 6 s short).
+- **Mid-track stop → Paused at the stop position + `reloadOnResume`**, not Idle. The Node
+  sends `pause` → `stop` when it loses power; Idle made the player vanish. IP-change
+  recovery now checks `stoppedMidTrackAtMs` on Paused (was Idle) — not re-tested yet.
+- `pause` statuses set `lastKnownSecs = status.secs` (unless a paused seek is pending).
+- Every Node state change is logged (`Node state X -> Y at Ns (verdict)`).
+Also today: "previous" restarts the track past 5 s (`previousRestartsTrack()`, everywhere
+incl. the mini-player swipe); AppNavHost no longer pads the top inset (artist photo
+under the status bar).
+
+### Release builds — 2026-09-25
+
+`sh ./gradlew assembleRelease` → `app/build/outputs/apk/release/app-release.apk`, signed
+with the **upload key** (user chose Google Play App Signing for later: Google holds the
+app key, this one signs uploads). Key + passwords live **outside the repo**:
+`C:\Users\eladi\.android\spindle-upload.jks` and `spindle-keystore.properties` next to it
+(read by `app/build.gradle.kts`; without the file, release builds come out unsigned).
+Cert SHA-256 `d68a0bc8…7930b058`, CN=Elad Imany, O=Spindle, 4096-bit RSA, ~27 years.
+- versionName `0.9.0-beta`, versionCode 1 — bump versionCode for every build handed out.
+- R8 shrinking deliberately **off** (needs keep rules for Ktor/Room/Hilt/ML Kit + re-test).
+- Release has no logging (Timber is planted only in debug) — use a debug build to diagnose.
+- A release build can't install over a debug build (different signature): uninstall first,
+  which wipes that phone's playlists, listening history and settings.

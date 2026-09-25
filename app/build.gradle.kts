@@ -1,9 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.androidx.room)
+}
+
+// Release signing: the upload key and its passwords live outside the repo, in the
+// developer's ~/.android (never committed). Without that file, release builds are
+// simply left unsigned instead of failing.
+val releaseKeyProps = Properties().apply {
+    val file = File(System.getProperty("user.home"), ".android/spindle-keystore.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
 }
 
 android {
@@ -17,13 +27,28 @@ android {
         minSdk = 26
         targetSdk = 37
         versionCode = 1
-        versionName = "1.0"
+        versionName = "0.9.0-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (releaseKeyProps.getProperty("storeFile") != null) {
+            create("release") {
+                storeFile = file(releaseKeyProps.getProperty("storeFile"))
+                storePassword = releaseKeyProps.getProperty("storePassword")
+                keyAlias = releaseKeyProps.getProperty("keyAlias")
+                keyPassword = releaseKeyProps.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            // Upload key; Google Play App Signing re-signs with the app key on publish.
+            signingConfig = signingConfigs.findByName("release")
+            // Not shrunk yet: R8 needs keep rules for Ktor/Room/Hilt/ML Kit and a full
+            // re-test — deliberately left for later (2026-09-25).
             optimization {
                 enable = false
             }
