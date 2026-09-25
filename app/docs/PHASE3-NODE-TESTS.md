@@ -40,7 +40,7 @@ explanation): Spindle sent "seek" a split second after "play", before the Node
 could seek. Fixed: the seek now waits until the Node reports the stream as
 seekable. These tests confirm it.
 
-- [ ] **1a. Switch mid-song, 5 times.** Play a song on the phone for ~30 s, then
+- [x] **1a. Switch mid-song, 5 times.** Play a song on the phone for ~30 s, then
       Now Playing → "Playing on" → pick the Node.
       **Expect:** no noise; the Node starts at about the same spot (within ~2–3 s —
       the Node always lands ~2 s past the requested second); the app's time
@@ -49,13 +49,13 @@ seekable. These tests confirm it.
       **Log:** `Seek to 30s held until the Node's stream is seekable`, then
       `Stream seekable — sending held seek to 30s`.
       **Repeat** with an MP3 and a FLAC (and a 24-bit FLAC if you have one).
-- [ ] **1b. Seek while playing.** On the Node, drag the seek bar forward (e.g. to
+- [x] **1b. Seek while playing.** On the Node, drag the seek bar forward (e.g. to
       2:00), then backward (e.g. to 0:40), then near the end.
       **Expect:** audio jumps within ~2 s each time, no noise; the slider doesn't
       snap back to the old position and then jump again.
-- [ ] **1c. Seek while paused.** Pause, drag to a new spot, press play.
+- [x] **1c. Seek while paused.** Pause, drag to a new spot, press play.
       **Expect:** resumes from the new spot.
-- [ ] **1d. Seek to ~5 s before the end.** **Expect:** the song ends and the next
+- [x] **1d. Seek to ~5 s before the end.** **Expect:** the song ends and the next
       one starts by itself (auto-advance), no double-skip.
 - [ ] **1e. Compare with the BluOS app.** During any of the above, open the BluOS
       app's now-playing view: its time should match Spindle's within ~2 s.
@@ -73,6 +73,8 @@ the documented API).
 ---
 
 ## 2. Someone else takes over the Node ★
+
+> 2026-09-25 (A73): took over with Spotify — Spindle stepped back and showed paused. ✔
 
 - [ ] **2a. Normal playback stays ours.** Play from Spindle to the Node and let it
       run 30 s. **Expect:** keeps playing (no sudden pause after ~10 s).
@@ -98,7 +100,7 @@ the documented API).
 
 ## 3. Screen off + battery locks ★
 
-- [ ] **3a. Locks held while streaming.** With music playing on the Node, run in
+- [x] **3a. Locks held while streaming.** With music playing on the Node, run in
       Android Studio's **Terminal** tab (phone plugged in):
       ```
       & "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" shell dumpsys power | findstr Spindle
@@ -151,7 +153,7 @@ between automatic and fixed forces a reconnect with a new IP.
 
 ## 5. The Node disappears and comes back ★
 
-- [ ] **5a. Power-cycle the Node mid-song.** Unplug its power, wait ~10 s, plug
+- [x] **5a. Power-cycle the Node mid-song.** Unplug its power, wait ~10 s, plug
       back in.
       **Expect:** Spindle shows buffering within ~10 s, does not crash; when the
       Node has booted (~1 min), the song resumes by itself at about the spot
@@ -208,3 +210,23 @@ model and we'll find another way (or skip 6a; the logic is small and was reviewe
 For each unticked box: the test number, what happened instead, and the Logcat
 lines from around that moment. Also mention which phone and which file type
 (MP3 / FLAC / hi-res FLAC) you used.
+
+---
+
+## Results — 2026-09-25, A73 at the real Node
+
+Passed: 1a (switch at 0:41 → Node started ~0:43, no noise, times match), 1b, 1c, 1d,
+2 (Spotify takeover), 3a, 5a (with the fixes below). Still to do: 1e, 3b (S25+, whole
+album, screen off), 4, 5b–5d, 6.
+
+Found and fixed at the Node:
+- **Seek while paused started playback** — `/Play?seek` also plays. The seek is now
+  kept and sent with the next play.
+- **Seek near the end, then the song ended → player vanished.** The Node only reports
+  `secs` on changes, so its last `secs` was 6 s short and the natural end read as a
+  user's stop. The end is now judged from the interpolated position.
+- **The Node sends `pause` then `stop` when it loses power.** Spindle used to go Idle
+  (player gone, nothing to resume). A mid-track stop now shows the song paused where it
+  stopped; play replays from there.
+- Node `pause` statuses now update the position (it showed the last *stream* secs).
+- Seen for the first time: the Node reports `connecting` for ~0.1 s after each /Play.

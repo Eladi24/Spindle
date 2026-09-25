@@ -10,6 +10,7 @@ import io.github.eladimany.spindle.core.model.BluOsPlayer
 import io.github.eladimany.spindle.core.model.OutputCapabilities
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.QueueItem
+import io.github.eladimany.spindle.core.model.elapsedMs
 import io.github.eladimany.spindle.data.bluos.BluOsClient
 import io.github.eladimany.spindle.data.bluos.BluOsDiscovery
 import io.github.eladimany.spindle.data.bluos.BluOsStatus
@@ -20,6 +21,10 @@ import io.github.eladimany.spindle.data.server.MediaHttpServer
 import io.github.eladimany.spindle.data.server.NetworkAddress
 import io.github.eladimany.spindle.data.server.ServerAddress
 import io.github.eladimany.spindle.data.server.TokenRegistry
+import java.net.InetSocketAddress
+import java.net.Socket
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,10 +41,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
-import java.net.InetSocketAddress
-import java.net.Socket
-import javax.inject.Inject
-import javax.inject.Singleton
 
 private const val LONG_POLL_TIMEOUT_SECONDS = 90
 private const val RETRY_DELAY_MS = 5_000L
@@ -118,6 +119,10 @@ class NodeOutput @Inject constructor(
     // showing seekTarget until the Node's secs land near it (or SEEK_SETTLE_MS).
     private var streamCanSeek = false
     private var pendingSeekSeconds: Int? = null
+    // A seek made while paused — sent with the next resume, not before: on the real Node
+    // /Play?seek also starts playback, so seeking a paused stream un-paused it (2026-09-25).
+    private var seekOnResumeSeconds: Int? = null
+    private var lastLoggedNodeState: String? = null
     private var seekTarget: Int? = null
     private var seekIssuedAtMs = 0L
 
@@ -223,6 +228,7 @@ class NodeOutput @Inject constructor(
     private fun resetSeekSync() {
         streamCanSeek = false
         pendingSeekSeconds = null
+        seekOnResumeSeconds = null
         seekTarget = null
     }
 
@@ -275,6 +281,16 @@ class NodeOutput @Inject constructor(
             currentItem?.let { replayAt(it, lastKnownSecs) }
             return
         }
+        seekOnResumeSeconds?.let { seconds ->
+            // Paused and then moved: one /Play?seek both jumps there and resumes.
+            seekOnResumeSeconds = null
+            val item = currentItem ?: return
+            if (!nodeCommand("seek") { bluOsClient.seek(it, seconds) }) return
+            seekTarget = seconds
+            seekIssuedAtMs = System.currentTimeMillis()
+            _state.value = PlaybackState.Playing(item, seconds * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L, seekIssuedAtMs)
+            return
+        }
         nodeCommand("resume") { bluOsClient.resume(it) }
     }
 
@@ -306,6 +322,13 @@ class NodeOutput @Inject constructor(
         }
         val item = currentItem ?: return
         lastKnownSecs = seconds
+        if (_state.value is PlaybackState.Paused) {
+            // Don't send it now — /Play?seek would start playback. Resume sends it.
+            Timber.d("Paused: seek to %ds kept for resume", seconds)
+            seekOnResumeSeconds = seconds
+            _state.value = PlaybackState.Paused(item, seconds * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
+            return
+        }
         if (!seenOurs || !streamCanSeek) {
             Timber.d("Seek to %ds held until the Node's stream is seekable", seconds)
             pendingSeekSeconds = seconds
@@ -571,6 +594,12 @@ class NodeOutput @Inject constructor(
             return
         }
         if (verdict == NodeOwnership.Verdict.OURS) seenOurs = true
+        if (status.state != lastLoggedNodeState) {
+            // Every change of the Node's own state — the only record of *why* Spindle's view
+            // changed (an unexplained pause at the Node, 2026-09-25, left no trace without it).
+            Timber.d("Node state %s -> %s at %ds (%s)", lastLoggedNodeState, status.state, status.secs, verdict)
+            lastLoggedNodeState = status.state
+        }
         when {
             status.state == "stream" -> {
                 // UNKNOWN here = a foreign stream inside the post-/Play grace window; not ours to display.
@@ -608,19 +637,37 @@ class NodeOutput @Inject constructor(
             // just doesn't show as Paused here (falls to the else branch
             // below), not a crash or a wrong action.
             status.state == "pause" -> {
+                // The Node's secs is current here — lastKnownSecs is from the last *stream*
+                // status, which can be minutes old (it only reports on changes). Unless a
+                // paused seek is waiting to be sent: then that's where we are.
+                if (seekOnResumeSeconds == null) lastKnownSecs = status.secs
                 _state.value = PlaybackState.Paused(item, lastKnownSecs * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
             }
             status.state == "stop" -> {
                 // Before our stream has shown up, "stop" is most likely the Node's
                 // leftover pre-/Play state — ignore it inside the grace window.
                 if (!seenOurs && msSincePlay < TAKEOVER_GRACE_MS) return
-                _state.value = if (seenOurs && NodeTrackEnd.isNaturalEnd(lastKnownSecs, lastKnownTotalSeconds)) {
+                // Where playback had got to, not the last secs the Node reported: it only
+                // reports on changes, so after a seek near the end its last secs can be
+                // several seconds short and a natural end read as a stop (found at the Node).
+                val positionSecs = ((_state.value.elapsedMs() ?: (lastKnownSecs * 1000L)) / 1000L).toInt()
+                val naturalEnd = seenOurs && NodeTrackEnd.isNaturalEnd(positionSecs, lastKnownTotalSeconds)
+                Timber.d(
+                    "Node stopped at ~%ds of %ss (last reported %ds) -> %s",
+                    positionSecs, lastKnownTotalSeconds, lastKnownSecs, if (naturalEnd) "track ended" else "stopped mid-track",
+                )
+                _state.value = if (naturalEnd) {
                     PlaybackState.Ended(item)
                 } else {
-                    // Someone pressed stop in the BluOS app, mid-track — not our queue's business
-                    // to advance. (Or our stream died from an IP change — see onNetworkChanged.)
+                    // Stopped mid-track: from the BluOS app, the Node itself (seen at the real
+                    // Node: pause then stop, e.g. powering off), or our stream dying on an IP
+                    // change (see onNetworkChanged). Not our queue's business to advance —
+                    // but keep the song: show it paused where it stopped, and play replays
+                    // from there (it used to go Idle, and the whole player disappeared).
                     stoppedMidTrackAtMs = SystemClock.elapsedRealtime()
-                    PlaybackState.Idle
+                    lastKnownSecs = positionSecs
+                    reloadOnResume = true
+                    PlaybackState.Paused(item, positionSecs * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
                 }
             }
             else -> Unit // Unrecognized state — keep the last known one rather than guess.
@@ -693,13 +740,16 @@ class NodeOutput @Inject constructor(
         when (val state = _state.value) {
             is PlaybackState.Playing -> replayAt(item, (interpolatedPositionMs(state) / 1000).toInt())
             is PlaybackState.Buffering -> replayAt(item, 0)
-            is PlaybackState.Idle -> {
+            is PlaybackState.Paused -> {
+                // A mid-track stop just before the address changed is our stream dying,
+                // not a user's stop: carry on by ourselves, as if nothing happened.
                 val stoppedAt = stoppedMidTrackAtMs
                 if (stoppedAt != null && SystemClock.elapsedRealtime() - stoppedAt < IP_CHANGE_STOP_WINDOW_MS) {
                     replayAt(item, lastKnownSecs)
+                } else {
+                    reloadOnResume = true
                 }
             }
-            is PlaybackState.Paused -> reloadOnResume = true
             // Ended: PlaybackController is about to play() the next track, which
             // already uses the new address. Error: nothing to recover.
             else -> Unit
