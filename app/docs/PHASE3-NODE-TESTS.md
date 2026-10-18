@@ -230,3 +230,23 @@ Found and fixed at the Node:
   stopped; play replays from there.
 - Node `pause` statuses now update the position (it showed the last *stream* secs).
 - Seen for the first time: the Node reports `connecting` for ~0.1 s after each /Play.
+
+---
+
+## Still to do — updated 2026-10-14
+
+**S25+ field report (release 0.9.0-beta, not the debug build):** on the Node, after ~10 min
+(2–3 songs) with the screen locked, the song stuck on its last ~3 s until the screen was
+unlocked; then resume / skip / previous played the "alien" noise. Diagnosis: Android saw
+Spindle's media session as idle during Node playback and froze the app. Fixed (uncommitted)
+with `SessionPlayer` — **not yet tested on the Node.**
+
+Run these next, in this order:
+1. **3b on the S25+ with 0.9.1-beta** — an album on the Node, screen locked 20–30 min.
+   Expect: every song plays to the end and advances; no stall, no noise. If it stalls,
+   note the song + time, and ideally repeat with the debug build plugged in for the log.
+2. **Lock screen during Node playback** — song + working play/pause/next/previous.
+3. **4a–4c (WiFi off/on, IP change)** — the recovery path changed on 2026-09-25 (a
+   mid-track stop is now Paused, not Idle) and hasn't been re-run since.
+4. Remaining: 1e, 2a, 2c–2f, 5b–5d, 6.
+
