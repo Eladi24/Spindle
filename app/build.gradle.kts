@@ -26,8 +26,8 @@ android {
         applicationId = "io.github.eladimany.spindle"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.9.0-beta"
+        versionCode = 3
+        versionName = "0.9.2-beta"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

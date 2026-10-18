@@ -149,6 +149,9 @@ fun MakePlaylistCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = colors.primary,
                         )
+                        is AiEngineStatus.Unavailable -> TextButton(onClick = onOpenSettings, modifier = Modifier.offset(x = (-12).dp)) {
+                            Text("Add a free Gemini key to describe playlists in words")
+                        }
                         else -> Unit
                     }
                 }

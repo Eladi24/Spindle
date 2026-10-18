@@ -10,6 +10,34 @@ Do not write a playback engine for that path.
 Protocol facts were measured against real hardware — see `docs/bluos-api.md`.
 Trust that file over any assumption about BluOS.
 
+## ▶ Next session — start here (updated 2026-10-18)
+
+**State:** `main` = `origin/main` at `3fc66c6`. **Uncommitted** (built, unit tests green):
+the 2026-10-14 work (`SessionPlayer` media-session fix, Gemini Nano "unavailable reason" —
+see "S25+ field report") **plus** the free Gemini key fallback for AI playlists (see "AI
+playlists — free Gemini key"). Release is **0.9.2-beta (versionCode 3)**; the user has
+`Spindle-0.9.2-beta.apk` to install on the S25+. Ask whether to commit + push first.
+
+**Open questions for the user** (ask these first, in this order):
+1. **S25+ free key:** did "Get my free key" → AI Studio → Copy → back work? Did Spindle
+   pick the key up from the clipboard, and does "Make a playlist" now take a description?
+   Reply quality and speed? (Never run against a real key — no phone, no key here.)
+2. **S25+ on the Node, screen locked 20–30 min:** plays through and advances, or still
+   stalls on the last ~3 s? Any "alien" noise? (SessionPlayer's real test, still not run.)
+3. Does the **lock screen / notification** show the song and controls on the Node?
+4. Is Spindle's battery usage on the S25+ set to **Unrestricted**?
+5. **Commit and push** now, or wait for the tests?
+
+**Waiting on the Node** (`docs/PHASE3-NODE-TESTS.md`, "Still to do" at the end): 3b
+(whole album, screen off, S25+ — now also the SessionPlayer test), the WiFi-drop/IP-change
+recovery (section 4 — its code path changed on 2026-09-25 and was never re-run), 1e,
+2a/2c–2f, 5b–5d, 6.
+
+**Offered, not started:** folder/playlist search on those tabs; title-only track search;
+R8 shrinking for release builds; landscape Now Playing; "Make a playlist like this";
+MusicBrainz genre/year fill-in; offline Gemma model download (alternative to the key);
+accessibility pass.
+
 ## Stack
 
 Kotlin 2.2.10 · AGP 9.4.1 (built-in Kotlin) · Jetpack Compose + Material 3
@@ -1392,8 +1420,8 @@ form), the matcher. Not built: A's free-text prompt, C, E** — they need an AI 
 
 - **Dependency:** `com.google.mlkit:genai-prompt:1.0.0-beta4` (approved by the user;
   beta, no SLA). Compiles against Kotlin 2.2.10 — no stdlib trap like Coil's. The model
-  lives in Android's AICore, not the APK. Supported devices include the Galaxy S25
-  family. Limits: input < ~4000 tokens, per-app inference quota, no unlocked bootloaders.
+  lives in Android's AICore, not the APK. **Not offered to apps on the Galaxy S25 family**
+  (confirmed 2026-10-18, see below) — S26, Pixel 9+, Z Fold7 and others only. Limits: input < ~4000 tokens, per-app inference quota, no unlocked bootloaders.
 - **API as actually shipped** (read from the jar with javap — the docs page is thin):
   `Generation.getClient()` → `GenerativeModel`; suspend `checkStatus(): Int`
   (`FeatureStatus.AVAILABLE/DOWNLOADABLE/DOWNLOADING/UNAVAILABLE`); `download():
@@ -1587,7 +1615,72 @@ app key, this one signs uploads). Key + passwords live **outside the repo**:
 (read by `app/build.gradle.kts`; without the file, release builds come out unsigned).
 Cert SHA-256 `d68a0bc8…7930b058`, CN=Elad Imany, O=Spindle, 4096-bit RSA, ~27 years.
 - versionName `0.9.0-beta`, versionCode 1 — bump versionCode for every build handed out.
+- **Hand out the APK as `Spindle-<versionName>.apk`** (user rule, 2026-10-18): copy
+  `app-release.apk` to that name in the same folder after building.
 - R8 shrinking deliberately **off** (needs keep rules for Ktor/Room/Hilt/ML Kit + re-test).
 - Release has no logging (Timber is planted only in debug) — use a debug build to diagnose.
 - A release build can't install over a debug build (different signature): uninstall first,
   which wipes that phone's playlists, listening history and settings.
+
+### S25+ field report: stuck near song ends, noise, no Gemini Nano — 2026-10-14
+
+User report on the release APK (0.9.0-beta): after ~10 min (2–3 songs) on the Node the
+song stuck on its last ~3 s until the screen was unlocked; then resume/skip/previous
+played the "alien" noise; Gemini Nano not found on the S25+ (found on an S26+).
+- **Cause of 1+2:** the MediaSession wrapped ExoPlayer, which is idle while the Node plays —
+  Android saw a session playing nothing, and the S25+ froze Spindle with the screen off.
+  The Node played its buffer, stalled before the end (rest of the file on the frozen
+  phone), nothing advanced the queue, and the half-read stream then played as noise.
+- **Fix:** `SessionPlayer` (a Media3 `SimpleBasePlayer`) mirrors `PlaybackController` for
+  whichever output is active and is the session's player; it replaces
+  `QueueAwareForwardingPlayer` (next/previous now arrive as `handleSeek` commands). The
+  service no longer injects or releases ExoPlayer (LocalOutput owns it). Checked on the A73
+  (phone output): session PLAYING with title/artist/album, media keys next/previous (incl.
+  the 5 s restart)/play-pause, the shade's player card buttons, "Queue finished" → play
+  key replays. **Not yet checked on the Node with the screen off — that's the real test.**
+- **3:** `AiEngineStatus.Unavailable(reason)` carries the phone's answer (status code or
+  exception), shown small in AI settings — release builds have no log. A73 shows
+  "status 0". Ask the S25+ user what it says; suggest updating Android AICore + Private
+  Compute Services from the Play Store.
+- Release bumped to **0.9.1-beta (versionCode 2)**.
+- **S25+ answer (2026-10-18):** "status 0" = `FeatureStatus.UNAVAILABLE`, a clean reply.
+  Google's ML Kit device list puts the S25 family only under the fixed-purpose GenAI APIs
+  (summarize/proofread/rewrite/describe image), **not the Prompt API** — Samsung Prompt API
+  phones are the Z Fold7/TriFold (nano-v2) and the S26 family (nano-v3). Open request:
+  github.com/googlesamples/mlkit/issues/1003. AICore updates don't change it.
+
+### AI playlists — free Gemini key (fallback) — built 2026-10-18, NOT yet run with a real key
+
+User wanted AI playlists on the S25+. Agreed: each user's **own free Gemini API key** from
+Google AI Studio, set up by a guided flow; one-tap "Sign in with Google → key" was ruled
+out (Google gives apps no way to create a Gemini key or use a user's quota from a sign-in).
+Mockup row 3 (F1–F4) on the AI playlists canvas, approved. **Fallback only:** Nano whenever
+Android offers it (v2 or v3, incl. Downloadable/Downloading — user confirmed v2 phones use Nano).
+- **`AiEngineRouter`** is now the bound `AiPlaylistEngine`: status = Nano's unless Nano is
+  Unavailable and a key is saved; `interpret` goes to Nano unless Nano is Unavailable.
+- **`GeminiKeyEngine`**: Ktor CIO, key in the `x-goog-api-key` header (not the URL).
+  Key check = `GET /v1beta/models?pageSize=1` (free, fails on a bad key). Requests
+  `POST /v1beta/models/{m}:generateContent` with `CriteriaPrompt`'s system + user text,
+  temperature 0.2, `responseMimeType: application/json`, 1024 max tokens. Models tried in
+  order, next only on 404: `gemini-flash-lite-latest`, `gemini-3.1-flash-lite`,
+  `gemini-2.5-flash-lite` — Flash-Lite is on the free plan. **No retries**: 429 → "free
+  limit used up, try later — nothing is charged".
+- **`GeminiApi`** (pure, `GeminiApiTest` 6 cases incl. the router rule): key pattern
+  (`AIza` + 30–60 of `[A-Za-z0-9_-]`), mask, request body, reply text (skips `thought`
+  parts), error classes (bad key = 400 with `API_KEY_INVALID` — checked against the live
+  API with a fake key — or 401/403; 429; 404).
+- **`GeminiKeyStore`**: DataStore `ai_key`, value AES-GCM-encrypted with an Android Keystore
+  key; undecryptable (e.g. restored backup) = no key.
+- **No charges, by design:** a key with no billing attached can't be charged — Google
+  returns 429 instead. Risk left: a user who creates the key inside an existing *billed*
+  Cloud project — the guide says "choose a new project". Apps can't detect billing.
+- **UI:** `AiSettingsScreen` shows the key card only while Nano is Unavailable (F1 / F4
+  connected + Change/Remove + "What leaves your phone"). `KeySetupSheet`
+  (`GeminiKeySheet.kt`): steps → opens `aistudio.google.com/app/apikey` → on return reads
+  the clipboard (waits for **window focus** — Android blocks clipboard reads while
+  unfocused; `WaitingForCopy.leftApp` stops it reading the instant the button is tapped)
+  → masked key + live check → "Use this key"; no key on the clipboard → paste field.
+  `MakePlaylistCard` links to settings when no AI is set up.
+- Verified: compile, unit tests, signed release. **Not verified on any phone** (no device
+  connected, no real key): the clipboard pickup, a real generateContent reply, the model
+  alias still being served.

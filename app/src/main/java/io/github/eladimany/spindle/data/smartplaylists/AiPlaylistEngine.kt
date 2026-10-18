@@ -11,8 +11,12 @@ sealed interface AiEngineStatus {
     /** Android is fetching the model; [progress] 0–1 when the size is known. */
     data class Downloading(val progress: Float?) : AiEngineStatus
 
-    /** No usable AI on this phone — the UI falls back to the chip builder. */
-    data object Unavailable : AiEngineStatus
+    /**
+     * No usable AI on this phone — the UI falls back to the chip builder. [reason] is the
+     * phone's own answer, shown in AI settings: release builds have no log, and "not
+     * available" alone couldn't tell an unsupported phone from an AICore that isn't ready.
+     */
+    data class Unavailable(val reason: String? = null) : AiEngineStatus
 }
 
 sealed interface InterpretResult {
@@ -24,9 +28,9 @@ sealed interface InterpretResult {
 
 /**
  * Turns a free-text request into [PlaylistCriteria] ([CriteriaPrompt] does the wording).
- * Gemini Nano on the phone first ([GeminiNanoEngine]); a bring-your-own-key cloud
- * engine may follow. Track picking never moves into the engine — it stays
- * [PlaylistMatcher], over the user's own library.
+ * Gemini Nano on the phone first ([GeminiNanoEngine]), the user's own Gemini key when
+ * Nano is unavailable ([GeminiKeyEngine]) — [AiEngineRouter] picks. Track picking never
+ * moves into the engine — it stays [PlaylistMatcher], over the user's own library.
  */
 interface AiPlaylistEngine {
     val status: StateFlow<AiEngineStatus>

@@ -23,17 +23,17 @@ import javax.inject.Singleton
 
 /**
  * Gemini Nano through ML Kit's GenAI Prompt API (beta) — the model lives in Android's
- * AICore service, not in the APK. Supported on the Galaxy S25 family among others;
- * everywhere else [status] settles on Unavailable and the UI uses the chip builder.
+ * AICore service, not in the APK. Offered to apps on the Galaxy S26 family, Pixel 9+ and
+ * others — not on the Galaxy S25 family, which keeps Nano for its own features only;
+ * there [status] settles on Unavailable and [AiEngineRouter] falls back to [GeminiKeyEngine].
  *
  * AICore limits: input under ~4000 tokens, a per-app inference quota, and no support
- * on phones with an unlocked bootloader. Not yet run on a supported phone — see
- * CLAUDE.md "AI playlists — Gemini Nano".
+ * on phones with an unlocked bootloader. See CLAUDE.md "AI playlists — Gemini Nano".
  */
 @Singleton
 class GeminiNanoEngine @Inject constructor() : AiPlaylistEngine {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val _status = MutableStateFlow<AiEngineStatus>(AiEngineStatus.Unavailable)
+    private val _status = MutableStateFlow<AiEngineStatus>(AiEngineStatus.Unavailable())
     override val status: StateFlow<AiEngineStatus> = _status.asStateFlow()
 
     /** Created on first use: on a phone without AICore even creating the client may fail. */
@@ -47,17 +47,18 @@ class GeminiNanoEngine @Inject constructor() : AiPlaylistEngine {
     override suspend fun refreshStatus() {
         if (downloadJob?.isActive == true) return
         _status.value = try {
-            when (client().checkStatus()) {
+            when (val code = client().checkStatus()) {
                 FeatureStatus.AVAILABLE -> AiEngineStatus.Ready
                 FeatureStatus.DOWNLOADABLE -> AiEngineStatus.Downloadable
                 FeatureStatus.DOWNLOADING -> AiEngineStatus.Downloading(progress = null)
-                else -> AiEngineStatus.Unavailable
+                else -> AiEngineStatus.Unavailable("Android answered: not available on this phone (status $code)")
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Timber.i(e, "Gemini Nano: status check failed — treating as unavailable")
-            AiEngineStatus.Unavailable
+            val code = (e as? GenAiException)?.let { " (code ${it.errorCode})" }.orEmpty()
+            AiEngineStatus.Unavailable("Couldn't check: ${e.javaClass.simpleName}$code — ${e.message}")
         }
         Timber.i("Gemini Nano status: %s", _status.value)
     }

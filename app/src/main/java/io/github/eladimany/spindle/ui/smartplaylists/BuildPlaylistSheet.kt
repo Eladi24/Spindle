@@ -95,7 +95,7 @@ fun BuildPlaylistSheet(
                 ) {
                     Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
                     Text(
-                        "No on-device AI on this phone, so this uses your tags.",
+                        "No AI set up on this phone, so this uses your tags.",
                         style = MaterialTheme.typography.bodySmall,
                         color = colors.onSurfaceVariant,
                     )
