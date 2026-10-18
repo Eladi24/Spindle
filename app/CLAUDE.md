@@ -16,7 +16,6 @@ Trust that file over any assumption about BluOS.
 and runs the whole real-phone list in `docs/PHASE3-NODE-TESTS.md`, "Still to do — updated
 2026-10-18" (A: S25+ screen-off at the Node, B: rest of the Node list, C: S25+ free Gemini
 key, D: S26+ Nano download, E: Fix track info). Start by asking for those results.
-Check `git status`/`git log origin/main..` — the track-info commit may not be pushed yet.
 
 **Fix track info** (built 2026-10-18, see its section near the end): tested on the A73
 offline only; MusicBrainz lookups never ran on a phone (E5–E8).
