@@ -61,11 +61,32 @@ class GeminiNanoEngine @Inject constructor() : AiPlaylistEngine {
             AiEngineStatus.Unavailable("Couldn't check: ${e.javaClass.simpleName}$code — ${e.message}")
         }
         Timber.i("Gemini Nano status: %s", _status.value)
+        // A download already under way (started before an app restart, or by Android
+        // itself): listen to it, or the UI would sit on "Downloading…" with no progress.
+        if (_status.value is AiEngineStatus.Downloading) followDownload()
     }
 
     override fun startDownload() {
-        if (_status.value != AiEngineStatus.Downloadable || downloadJob?.isActive == true) return
+        if (_status.value != AiEngineStatus.Downloadable) return
         _status.value = AiEngineStatus.Downloading(progress = null)
+        followDownload()
+    }
+
+    override fun stopDownload() {
+        val job = downloadJob ?: return
+        downloadJob = null
+        job.cancel()
+        // Whatever Android says now: Downloadable if it dropped the download, Downloading
+        // if AICore carries on by itself (refreshStatus then follows it again).
+        scope.launch {
+            job.join()
+            refreshStatus()
+        }
+    }
+
+    /** Collects [GenerativeModel.download] — for a new download or one already running. */
+    private fun followDownload() {
+        if (downloadJob?.isActive == true) return
         downloadJob = scope.launch {
             var total = 0L
             try {
@@ -73,11 +94,16 @@ class GeminiNanoEngine @Inject constructor() : AiPlaylistEngine {
                     when (event) {
                         is DownloadStatus.DownloadStarted -> {
                             total = event.bytesToDownload
-                            _status.value = AiEngineStatus.Downloading(progress = 0f)
+                            _status.value = AiEngineStatus.Downloading(progress = 0f, bytesDone = 0L, bytesTotal = total.takeIf { it > 0 })
                         }
-                        is DownloadStatus.DownloadProgress -> _status.value = AiEngineStatus.Downloading(
-                            progress = if (total > 0) (event.totalBytesDownloaded.toFloat() / total).coerceIn(0f, 1f) else null,
-                        )
+                        is DownloadStatus.DownloadProgress -> {
+                            val done = event.totalBytesDownloaded
+                            _status.value = AiEngineStatus.Downloading(
+                                progress = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else null,
+                                bytesDone = done,
+                                bytesTotal = total.takeIf { it > 0 },
+                            )
+                        }
                         is DownloadStatus.DownloadCompleted -> _status.value = AiEngineStatus.Ready
                         is DownloadStatus.DownloadFailed -> {
                             Timber.w(event.e, "Gemini Nano download failed")

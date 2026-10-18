@@ -12,21 +12,18 @@ Trust that file over any assumption about BluOS.
 
 ## ▶ Next session — start here (updated 2026-10-18)
 
-**State:** `main` = `origin/main` at `3fc66c6`. **Uncommitted** (built, unit tests green):
-the 2026-10-14 work (`SessionPlayer` media-session fix, Gemini Nano "unavailable reason" —
-see "S25+ field report") **plus** the free Gemini key fallback for AI playlists (see "AI
-playlists — free Gemini key"). Release is **0.9.2-beta (versionCode 3)**; the user has
-`Spindle-0.9.2-beta.apk` to install on the S25+. Ask whether to commit + push first.
+**State:** everything committed and pushed. Release **0.9.3-beta (versionCode 4)** —
+the user has `Spindle-0.9.3-beta.apk` and runs the whole real-phone list in
+`docs/PHASE3-NODE-TESTS.md`, "Still to do — updated 2026-10-18" (A: S25+ screen-off at
+the Node, B: rest of the Node list, C: S25+ free Gemini key, D: S26+ Nano download).
+Start by asking for those results.
 
-**Open questions for the user** (ask these first, in this order):
-1. **S25+ free key:** did "Get my free key" → AI Studio → Copy → back work? Did Spindle
-   pick the key up from the clipboard, and does "Make a playlist" now take a description?
-   Reply quality and speed? (Never run against a real key — no phone, no key here.)
-2. **S25+ on the Node, screen locked 20–30 min:** plays through and advances, or still
-   stalls on the last ~3 s? Any "alien" noise? (SessionPlayer's real test, still not run.)
-3. Does the **lock screen / notification** show the song and controls on the Node?
-4. Is Spindle's battery usage on the S25+ set to **Unrestricted**?
-5. **Commit and push** now, or wait for the tests?
+**Open design question — tracks with only a title on the S25+** (user, 2026-10-18): some
+files have no artist/album tags; some titles start with the artist ("Artist - Title").
+Proposed, waiting for the user's answer + a mockup: (1) offline, split "Artist - Title"
+from the title/filename; (2) opt-in MusicBrainz lookup per track to confirm the split and
+fill album/year/genre; stored in Spindle's own table, file tags always win, a review
+screen before applying. AcoustID (audio fingerprint) only if titles are useless.
 
 **Waiting on the Node** (`docs/PHASE3-NODE-TESTS.md`, "Still to do" at the end): 3b
 (whole album, screen off, S25+ — now also the SessionPlayer test), the WiFi-drop/IP-change
@@ -1642,7 +1639,8 @@ played the "alien" noise; Gemini Nano not found on the S25+ (found on an S26+).
   exception), shown small in AI settings — release builds have no log. A73 shows
   "status 0". Ask the S25+ user what it says; suggest updating Android AICore + Private
   Compute Services from the Play Store.
-- Release bumped to **0.9.1-beta (versionCode 2)**.
+- Release bumped to **0.9.1-beta (versionCode 2)**; 0.9.2-beta (3) and 0.9.3-beta (4) on
+  2026-10-18.
 - **S25+ answer (2026-10-18):** "status 0" = `FeatureStatus.UNAVAILABLE`, a clean reply.
   Google's ML Kit device list puts the S25 family only under the fixed-purpose GenAI APIs
   (summarize/proofread/rewrite/describe image), **not the Prompt API** — Samsung Prompt API
@@ -1681,6 +1679,23 @@ Android offers it (v2 or v3, incl. Downloadable/Downloading — user confirmed v
   unfocused; `WaitingForCopy.leftApp` stops it reading the instant the button is tapped)
   → masked key + live check → "Use this key"; no key on the clipboard → paste field.
   `MakePlaylistCard` links to settings when no AI is set up.
-- Verified: compile, unit tests, signed release. **Not verified on any phone** (no device
-  connected, no real key): the clipboard pickup, a real generateContent reply, the model
-  alias still being served.
+- Verified on the A73 (offline, no real key): F1 card, guide sheet, AI Studio opens in
+  Chrome, return with nothing copied → paste field + hint, check offline → "Couldn't reach
+  Google". **Fixed there:** the return was watched on the settings screen's window, which
+  never regains focus while the sheet (its own window) is open — now the sheet watches its
+  own window. Not verified: a real key, a real generateContent reply, the model alias.
+
+### Gemini Nano download — progress + stop — 2026-10-18
+
+User report (S26+): the download only ever said "Downloading". ML Kit's API has
+`download(): Flow` with `DownloadStarted(bytesToDownload)` / `DownloadProgress(
+totalBytesDownloaded)` — and **no cancel or delete** (checked with javap; the model is
+AICore's, shared by all apps). Now:
+- `refreshStatus()` re-attaches (`followDownload`) when Android says DOWNLOADING, so the
+  progress survives leaving the screen or an app restart (before: bare "Downloading…").
+- `Downloading` carries `bytesDone`/`bytesTotal`: "312 MB of 1.2 GB", or "312 MB so far"
+  when the size is unknown; the badge shows the percentage.
+- **Stop download** cancels Spindle's collection, then re-reads the status: Downloadable →
+  "Download stopped. Android may keep the part it already fetched…"; still Downloading →
+  "Android is finishing the download by itself…" (followed again). Which one AICore does
+  is unknown until tried on the S26+ (test D3). Not runnable on the A73 (Unavailable).

@@ -62,6 +62,8 @@ class GeminiKeyEngine @Inject constructor(private val keyStore: GeminiKeyStore) 
 
     override fun startDownload() = Unit
 
+    override fun stopDownload() = Unit
+
     suspend fun saveKey(key: String) = keyStore.save(key)
 
     suspend fun removeKey() = keyStore.clear()

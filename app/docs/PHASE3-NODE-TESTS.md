@@ -233,20 +233,105 @@ Found and fixed at the Node:
 
 ---
 
-## Still to do — updated 2026-10-14
+## Still to do — updated 2026-10-18
 
-**S25+ field report (release 0.9.0-beta, not the debug build):** on the Node, after ~10 min
-(2–3 songs) with the screen locked, the song stuck on its last ~3 s until the screen was
-unlocked; then resume / skip / previous played the "alien" noise. Diagnosis: Android saw
-Spindle's media session as idle during Node playback and froze the app. Fixed (uncommitted)
-with `SessionPlayer` — **not yet tested on the Node.**
+Everything that still needs a real phone, in the order to run it. Tick the boxes here
+as you go. **Build: `Spindle-0.9.3-beta.apk`** (release). It installs over 0.9.x on the
+S25+ and keeps playlists, history and settings. Release builds have no Logcat output — if
+something fails, note what you saw and when; Claude can give you a debug build for a
+second run with logs.
 
-Run these next, in this order:
-1. **3b on the S25+ with 0.9.1-beta** — an album on the Node, screen locked 20–30 min.
-   Expect: every song plays to the end and advances; no stall, no noise. If it stalls,
-   note the song + time, and ideally repeat with the debug build plugged in for the log.
-2. **Lock screen during Node playback** — song + working play/pause/next/previous.
-3. **4a–4c (WiFi off/on, IP change)** — the recovery path changed on 2026-09-25 (a
-   mid-track stop is now Paused, not Idle) and hasn't been re-run since.
-4. Remaining: 1e, 2a, 2c–2f, 5b–5d, 6.
+### A. S25+ at the Node — the screen-off fix (most important)
 
+Background: on 0.9.0-beta, after ~10 min (2–3 songs) with the screen locked, the song
+stuck on its last ~3 s until the screen was unlocked; then resume / skip / previous played
+the "alien" noise. Cause: Android saw Spindle's media session as idle during Node playback
+and froze the app. Fixed with `SessionPlayer` (0.9.1-beta on) — never tested at the Node.
+
+- [ ] **A1. (= 3b) Whole album, screen locked 20–30 min.** Spindle's battery usage on
+      **Unrestricted** (Settings → Apps → Spindle → Battery).
+      **Expect:** every song plays to the end and the next one starts; no stall on the last
+      seconds, no noise. **If it stalls:** note the song and time, then unlock and note
+      whether pressing play/next makes noise.
+- [ ] **A2. Same as A1 with battery on "Optimized"** (optional, after A1 passes) — shows
+      whether the fix alone is enough for people who never change that setting.
+- [ ] **A3. Lock screen + notification while playing on the Node.**
+      **Expect:** song title, artist and artwork; play/pause, next and previous all work;
+      previous restarts the song if more than 5 s in, otherwise goes back a song.
+- [ ] **A4. Headphone / Bluetooth media buttons** (if a headset is connected to the phone
+      while the Node plays): play/pause and next work.
+
+### B. The rest of the Node checklist (sections above)
+
+- [ ] **4a–4c — WiFi off/on and IP change.** The recovery code changed on 2026-09-25
+      (a mid-track stop is now Paused, not Idle) and hasn't been run since.
+- [ ] **2a, 2c–2f** — stays ours / take it back / physical input / stop and pause from the
+      BluOS app.
+- [ ] **5b–5d** — pause or change volume while the Node is off; 10-minute outage.
+- [ ] **1e** — times match the BluOS app.
+- [ ] **6a** — the Node gets a different IP (needs the router; skip if awkward).
+
+### C. S25+ — AI playlists with a free Gemini key
+
+The S25 family can't use Gemini Nano from apps (Android answers "status 0"), so Spindle
+offers your own free key from Google AI Studio. Needs internet. Nothing here can cost
+money as long as billing stays off in Google.
+
+- [ ] **C1. The card.** Playlists → "Make a playlist" shows **Build a playlist** and the
+      link **"Add a free Gemini key to describe playlists in words"**. Tap the link.
+      **Expect:** AI settings: "On this phone · Not available (status 0)", and a **Free
+      Gemini key** card with **Get my free key**.
+- [ ] **C2. Get the key.** Get my free key → read the 3 steps → **Open Google AI Studio**.
+      **Expect:** AI Studio opens already signed in (no password). Accept the terms if
+      asked → **Create API key** → if it asks for a project, choose a **new** one →
+      **Copy** the key.
+- [ ] **C3. Coming back.** Switch back to Spindle (Back, or the recent-apps button).
+      **Expect:** "Found your key" with the key masked (`AIza••••••••xxxx`), "Checking
+      with Google…", then **"Key works"**. Android may show a small "Spindle pasted from
+      your clipboard" note — that's normal. Tap **Use this key**.
+      **If it says "Paste your key" instead:** the key wasn't on the clipboard — paste it
+      into the box (long-press → Paste) and tap Check key. Tell Claude which happened.
+- [ ] **C4. Connected.** **Expect:** the card shows **Connected**, the masked key,
+      Change key / Remove, and "What leaves your phone".
+- [ ] **C5. Make a playlist from words.** Back to Playlists. **Expect:** the card now has
+      the "Say the vibe" prompt and idea chips. Try 3–4 requests, e.g. "chill 90s rock for
+      driving", "upbeat songs for a workout", "something mellow for a rainy evening",
+      and one in Hebrew.
+      **Expect:** a working row, then an AI draft within ~5–15 s; the "Spindle heard"
+      chips (genres / decades) make sense for the request. Note for each: time taken and
+      whether the picks fit.
+- [ ] **C6. Leave the screen while it works.** Send a request and switch tabs right away.
+      **Expect:** the draft is still ready when you come back to Playlists.
+- [ ] **C7. No internet.** Airplane mode → send a request.
+      **Expect:** "Couldn't reach Gemini. Check the internet connection." — no crash.
+- [ ] **C8. Wrong key.** AI settings → Change key → type a few wrong characters at the end
+      of the key → Check key.
+      **Expect:** "Google says this key doesn't work." The saved key stays connected
+      (close the sheet without saving).
+- [ ] **C9. Remove.** AI settings → Remove. **Expect:** back to "Get my free key"; the
+      Playlists card falls back to Build a playlist + the link.
+      Then add the key again (C2–C3) so it's set up for normal use.
+
+### D. S26+ — Gemini Nano download (if you still have access to it)
+
+- [ ] **D1. Progress.** AI settings → **Download on-device AI**.
+      **Expect:** a progress bar with a percentage in the status badge ("Downloading 26%")
+      and "312 MB of 1.2 GB" under the bar. If Android doesn't report the size, the bar
+      moves back and forth and the text says "312 MB so far". Note which one you see.
+- [ ] **D2. Leave and come back.** During the download, leave AI settings (or close
+      Spindle completely and reopen it). **Expect:** the progress picks up again — not a
+      bare "Downloading…" with nothing moving.
+- [ ] **D3. Stop.** Tap **Stop download**. Note what happens, because only the phone can
+      tell us: either "Download stopped…" with the Download button back (Android dropped
+      it), or "Android is finishing the download by itself…" with the progress still
+      moving (Android continues anyway — the model belongs to Android, not Spindle, and
+      apps have no way to delete it).
+- [ ] **D4. Finished.** When the download completes: "On this phone · Ready", and the
+      Playlists card has the "Say the vibe" prompt. There is **no** Free Gemini key card
+      on this phone (Nano is used instead).
+- [ ] **D5. A playlist from words**, as in C5 — note speed and quality vs. the S25+.
+
+### What to send back
+
+For each unticked box: the code (A1, C3, …), what happened instead, and the time. For A1
+also the file type (MP3 / FLAC / hi-res FLAC). Screenshots help for anything in C and D.

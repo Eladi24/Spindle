@@ -29,6 +29,8 @@ class AiEngineRouter @Inject constructor(
 
     override fun startDownload() = nano.startDownload()
 
+    override fun stopDownload() = nano.stopDownload()
+
     override suspend fun interpret(request: String, facets: LibraryFacets, default: PlaylistCriteria): InterpretResult =
         if (nano.status.value is AiEngineStatus.Unavailable) cloud.interpret(request, facets, default)
         else nano.interpret(request, facets, default)

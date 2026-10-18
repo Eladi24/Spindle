@@ -117,7 +117,19 @@ class AiSettingsViewModel @Inject constructor(
         viewModelScope.launch { nano.refreshStatus() }
     }
 
-    fun download() = nano.startDownload()
+    /** True after Stop, so the card can say what happened to the download. */
+    private val _downloadStopped = MutableStateFlow(false)
+    val downloadStopped: StateFlow<Boolean> = _downloadStopped.asStateFlow()
+
+    fun download() {
+        _downloadStopped.value = false
+        nano.startDownload()
+    }
+
+    fun stopDownload() {
+        _downloadStopped.value = true
+        nano.stopDownload()
+    }
 
     fun startGuide() {
         _setup.value = KeySetup.Guide
@@ -203,6 +215,7 @@ fun AiSettingsScreen(onBack: () -> Unit, viewModel: AiSettingsViewModel = hiltVi
     val status by viewModel.nanoStatus.collectAsStateWithLifecycle()
     val maskedKey by viewModel.maskedKey.collectAsStateWithLifecycle()
     val setup by viewModel.setup.collectAsStateWithLifecycle()
+    val downloadStopped by viewModel.downloadStopped.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.refresh() }
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
@@ -240,7 +253,12 @@ fun AiSettingsScreen(onBack: () -> Unit, viewModel: AiSettingsViewModel = hiltVi
                 style = MaterialTheme.typography.bodyMedium,
                 color = colors.onSurfaceVariant,
             )
-            OnDeviceCard(status = status, onDownload = viewModel::download)
+            OnDeviceCard(
+                status = status,
+                downloadStopped = downloadStopped,
+                onDownload = viewModel::download,
+                onStopDownload = viewModel::stopDownload,
+            )
             if (status is AiEngineStatus.Unavailable) {
                 GeminiKeyCard(
                     maskedKey = maskedKey,
@@ -374,7 +392,12 @@ private fun PrivacyNote() {
 }
 
 @Composable
-private fun OnDeviceCard(status: AiEngineStatus, onDownload: () -> Unit) {
+private fun OnDeviceCard(
+    status: AiEngineStatus,
+    downloadStopped: Boolean,
+    onDownload: () -> Unit,
+    onStopDownload: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val angle by rememberGlintAngle(periodMs = 6_000)
     val active = status == AiEngineStatus.Ready
@@ -399,7 +422,9 @@ private fun OnDeviceCard(status: AiEngineStatus, onDownload: () -> Unit) {
             when (status) {
                 AiEngineStatus.Ready -> "Gemini Nano, built into Android."
                 AiEngineStatus.Downloadable -> "This phone supports Gemini Nano. Android downloads the model once; Spindle's size doesn't change."
-                is AiEngineStatus.Downloading -> "Android is fetching the model. Keep using Spindle."
+                is AiEngineStatus.Downloading ->
+                    if (downloadStopped) "Android is finishing the download by itself — the model is part of Android, shared with other apps."
+                    else "Android is fetching the model. Keep using Spindle."
                 is AiEngineStatus.Unavailable -> "Android doesn't let apps use Gemini Nano on this phone. Spindle checks again each time you open this screen."
             },
             style = MaterialTheme.typography.bodyMedium,
@@ -409,21 +434,37 @@ private fun OnDeviceCard(status: AiEngineStatus, onDownload: () -> Unit) {
             AiEngineStatus.Ready -> FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("Free", "Private", "Works offline").forEach { Tag(it) }
             }
-            AiEngineStatus.Downloadable -> Button(
-                onClick = onDownload,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .glow(colors.primary.copy(alpha = 0.35f), radius = 14.dp, cornerRadius = 24.dp),
-                shape = RoundedCornerShape(24.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
-            ) { Text("Download on-device AI", fontWeight = FontWeight.Bold) }
+            AiEngineStatus.Downloadable -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (downloadStopped) {
+                    Text(
+                        "Download stopped. Android may keep the part it already fetched — the model belongs to " +
+                            "Android, and only Android can remove it.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = colors.onSurfaceVariant.copy(alpha = 0.8f),
+                    )
+                }
+                Button(
+                    onClick = onDownload,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .glow(colors.primary.copy(alpha = 0.35f), radius = 14.dp, cornerRadius = 24.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary, contentColor = colors.onPrimary),
+                ) { Text("Download on-device AI", fontWeight = FontWeight.Bold) }
+            }
             is AiEngineStatus.Downloading -> {
                 val progress = status.progress
                 if (progress == null) {
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 } else {
                     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                }
+                downloadSizeText(status)?.let {
+                    Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant)
+                }
+                if (!downloadStopped) {
+                    OutlinedButton(onClick = onStopDownload) { Text("Stop download") }
                 }
             }
             // The phone's exact answer, small — the only way to tell why on a release build.
@@ -432,6 +473,18 @@ private fun OnDeviceCard(status: AiEngineStatus, onDownload: () -> Unit) {
             }
         }
     }
+}
+
+/** "312 MB of 1.2 GB" — or "312 MB so far" when Android didn't say the size. */
+private fun downloadSizeText(status: AiEngineStatus.Downloading): String? {
+    val done = status.bytesDone ?: return null
+    val total = status.bytesTotal
+    return if (total != null) "${formatBytes(done)} of ${formatBytes(total)}" else "${formatBytes(done)} so far"
+}
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_000_000_000 -> "%.1f GB".format(bytes / 1_000_000_000.0)
+    else -> "${bytes / 1_000_000} MB"
 }
 
 @Composable

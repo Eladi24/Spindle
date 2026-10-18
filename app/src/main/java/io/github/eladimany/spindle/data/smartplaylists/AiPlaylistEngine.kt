@@ -8,8 +8,12 @@ sealed interface AiEngineStatus {
     /** Supported, but the model isn't on the phone yet — [AiPlaylistEngine.startDownload]. */
     data object Downloadable : AiEngineStatus
 
-    /** Android is fetching the model; [progress] 0–1 when the size is known. */
-    data class Downloading(val progress: Float?) : AiEngineStatus
+    /**
+     * Android is fetching the model. [progress] 0–1 when the size is known; [bytesDone]
+     * when Android reports progress at all (it may join a download already under way
+     * without saying how big it is).
+     */
+    data class Downloading(val progress: Float?, val bytesDone: Long? = null, val bytesTotal: Long? = null) : AiEngineStatus
 
     /**
      * No usable AI on this phone — the UI falls back to the chip builder. [reason] is the
@@ -40,6 +44,12 @@ interface AiPlaylistEngine {
 
     /** Starts the model download when [status] is [AiEngineStatus.Downloadable]; otherwise no-op. */
     fun startDownload()
+
+    /**
+     * Stops Spindle's download request. The model belongs to Android (AICore, shared by
+     * all apps): there is no API to delete it, and Android may keep what it already fetched.
+     */
+    fun stopDownload()
 
     suspend fun interpret(request: String, facets: LibraryFacets, default: PlaylistCriteria): InterpretResult
 }
