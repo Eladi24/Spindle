@@ -9,6 +9,9 @@ import io.github.eladimany.spindle.data.db.entity.AlbumEntity
 import io.github.eladimany.spindle.data.db.entity.ArtistEntity
 import io.github.eladimany.spindle.data.db.entity.FolderEntity
 import io.github.eladimany.spindle.data.db.entity.TrackEntity
+import io.github.eladimany.spindle.data.trackinfo.FileTags
+import io.github.eladimany.spindle.data.trackinfo.TrackInfoFixEntity
+import io.github.eladimany.spindle.data.trackinfo.TrackInfoMerge
 import io.github.eladimany.spindle.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
@@ -40,6 +43,28 @@ private class FolderAccumulator(val id: Long, val name: String) {
     var trackCount = 0
 }
 
+/** One MediaStore row with "missing" tags as null — the scan's first pass. */
+private class RawRow(
+    val id: Long,
+    val title: String,
+    val artist: String?,
+    val artistId: Long,
+    val album: String?,
+    /** What MediaStore calls the album even when untagged (usually the folder's name). */
+    val albumShown: String,
+    val albumId: Long,
+    val trackNumber: Int?,
+    val discNumber: Int,
+    val durationMs: Long,
+    val year: Int?,
+    val genre: String?,
+    val folderId: Long,
+    val folderName: String,
+    val dateAddedMs: Long,
+    val fileName: String,
+    val fileKey: String,
+)
+
 /**
  * Scans MediaStore's audio collection in one cursor pass. MediaStore is the
  * primary and only scanner for v1 — see docs/PLAN.md §5.1.
@@ -48,6 +73,10 @@ private class FolderAccumulator(val id: Long, val name: String) {
  * so the folder picker in Settings can still show and re-include one later. Tracks
  * whose folder is excluded are skipped from tracks/albums/artists entirely — this is
  * how chat-app voice notes and similar noise stay out of the library.
+ *
+ * The user's track-info fixes are applied here, so albums and artists group by the
+ * fixed names: a fix naming an artist or album already in the library joins it; a new
+ * one gets an id derived from its name ([nameId]).
  */
 class MediaStoreScanner @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -60,16 +89,25 @@ class MediaStoreScanner @Inject constructor(
         val folders: List<FolderEntity>,
     )
 
-    fun scan(excludedFolderIds: Set<Long>): Flow<ScanProgress> = flow {
+    /**
+     * [fixes] are the user's saved track-info fixes by file key; [TrackInfoMerge]
+     * decides how each combines with the file's own tags.
+     */
+    fun scan(
+        excludedFolderIds: Set<Long>,
+        fixes: Map<String, TrackInfoFixEntity> = emptyMap(),
+    ): Flow<ScanProgress> = flow {
         val startedAt = System.currentTimeMillis()
-        val tracks = mutableListOf<TrackEntity>()
-        val albums = LinkedHashMap<Long, AlbumAccumulator>()
-        val artists = LinkedHashMap<Long, ArtistAccumulator>()
+        val rows = mutableListOf<RawRow>()
         val folders = LinkedHashMap<Long, FolderAccumulator>()
 
         // GENRE is a plain column from API 30; before that it lives in the Genres table.
         val genreColumn = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
         val genresById = if (genreColumn) emptyMap() else readGenresPre30()
+        // The file's place, for keying fixes: RELATIVE_PATH from API 29, the full path before.
+        val relativePathColumn = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        @Suppress("DEPRECATION")
+        val pathColumnName = if (relativePathColumn) MediaStore.Audio.Media.RELATIVE_PATH else MediaStore.Audio.Media.DATA
 
         val projection = listOfNotNull(
             MediaStore.Audio.Media._ID,
@@ -84,6 +122,8 @@ class MediaStoreScanner @Inject constructor(
             MediaStore.Audio.Media.BUCKET_ID,
             MediaStore.Audio.Media.BUCKET_DISPLAY_NAME,
             MediaStore.Audio.Media.DATE_ADDED,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            pathColumnName,
             if (genreColumn) MediaStore.Audio.Media.GENRE else null,
         ).toTypedArray()
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -107,27 +147,14 @@ class MediaStoreScanner @Inject constructor(
             val bucketIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.BUCKET_ID)
             val bucketNameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME)
             val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val displayNameCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
+            val pathCol = cursor.getColumnIndexOrThrow(pathColumnName)
             val genreCol = if (genreColumn) cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.GENRE) else -1
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
-                val title = cursor.getString(titleCol) ?: "Unknown"
-                val artistId = cursor.getLong(artistIdCol)
-                val artistName = cursor.getString(artistCol) ?: "Unknown artist"
-                val albumId = cursor.getLong(albumIdCol)
-                val albumName = cursor.getString(albumCol) ?: "Unknown album"
-                val durationMs = cursor.getLong(durationCol)
-                val year = cursor.getInt(yearCol).takeIf { it > 0 }
                 val folderId = cursor.getLong(bucketIdCol)
                 val folderName = cursor.getString(bucketNameCol) ?: "Unknown folder"
-                val dateAddedMs = cursor.getLong(dateAddedCol) * 1000
-                val genre = (if (genreCol >= 0) cursor.getString(genreCol) else genresById[id])
-                    ?.takeIf { it.isNotBlank() }
-
-                // MediaStore packs disc+track as disc*1000+track when disc info exists.
-                val rawTrack = cursor.getInt(trackCol)
-                val discNumber = if (rawTrack >= 1000) rawTrack / 1000 else 1
-                val trackNumber = (if (rawTrack >= 1000) rawTrack % 1000 else rawTrack).takeIf { it > 0 }
 
                 var folderAcc = folders[folderId]
                 if (folderAcc == null) {
@@ -138,46 +165,94 @@ class MediaStoreScanner @Inject constructor(
 
                 if (folderId in excludedFolderIds) continue
 
-                val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id).toString()
-
-                tracks += TrackEntity(
+                val fileName = cursor.getString(displayNameCol).orEmpty()
+                val path = cursor.getString(pathCol).orEmpty()
+                val artist = cursor.getString(artistCol)?.takeUnless(TrackInfoMerge::isMissing)
+                val album = cursor.getString(albumCol)
+                // MediaStore packs disc+track as disc*1000+track when disc info exists.
+                val rawTrack = cursor.getInt(trackCol)
+                rows += RawRow(
                     id = id,
-                    uri = uri,
-                    title = title,
-                    titleSortKey = title.lowercase(),
-                    artistId = artistId,
-                    artistName = artistName,
-                    albumId = albumId,
-                    albumName = albumName,
-                    trackNumber = trackNumber,
-                    discNumber = discNumber,
-                    durationMs = durationMs,
-                    year = year,
-                    genre = genre,
+                    title = cursor.getString(titleCol) ?: "Unknown",
+                    artist = artist,
+                    artistId = cursor.getLong(artistIdCol),
+                    // Untagged files get their folder's name as album from MediaStore.
+                    album = album?.takeUnless { TrackInfoMerge.isMissing(it) || (artist == null && it == folderName) },
+                    albumShown = album?.takeUnless(TrackInfoMerge::isMissing) ?: "Unknown album",
+                    albumId = cursor.getLong(albumIdCol),
+                    trackNumber = (if (rawTrack >= 1000) rawTrack % 1000 else rawTrack).takeIf { it > 0 },
+                    discNumber = if (rawTrack >= 1000) rawTrack / 1000 else 1,
+                    durationMs = cursor.getLong(durationCol),
+                    year = cursor.getInt(yearCol).takeIf { it > 0 },
+                    genre = (if (genreCol >= 0) cursor.getString(genreCol) else genresById[id])?.takeIf { it.isNotBlank() },
                     folderId = folderId,
                     folderName = folderName,
-                    dateAddedMs = dateAddedMs,
+                    dateAddedMs = cursor.getLong(dateAddedCol) * 1000,
+                    fileName = fileName,
+                    fileKey = if (relativePathColumn) (path + fileName).lowercase() else path.lowercase(),
                 )
-
-                var albumAcc = albums[albumId]
-                if (albumAcc == null) {
-                    albumAcc = AlbumAccumulator(albumId, albumName, artistId, artistName, year)
-                    albums[albumId] = albumAcc
-                }
-                albumAcc.trackCount += 1
-
-                var artistAcc = artists[artistId]
-                if (artistAcc == null) {
-                    artistAcc = ArtistAccumulator(artistId, artistName)
-                    artists[artistId] = artistAcc
-                }
-                artistAcc.trackCount += 1
-                artistAcc.albumIds.add(albumId)
-
-                if (tracks.size % 200 == 0) {
-                    emit(ScanProgress.InProgress(tracks.size))
+                if (rows.size % 200 == 0) {
+                    emit(ScanProgress.InProgress(rows.size))
                 }
             }
+        }
+
+        // Names already in the library, so a fix joins the existing artist/album.
+        val artistIdByName = HashMap<String, Long>()
+        val albumIdByKey = HashMap<String, Long>()
+        for (row in rows) {
+            val artist = row.artist ?: continue
+            artistIdByName.putIfAbsent(TrackInfoMerge.norm(artist), row.artistId)
+            row.album?.let { albumIdByKey.putIfAbsent(albumKey(it, artist), row.albumId) }
+        }
+
+        val tracks = ArrayList<TrackEntity>(rows.size)
+        val albums = LinkedHashMap<Long, AlbumAccumulator>()
+        val artists = LinkedHashMap<Long, ArtistAccumulator>()
+        for (row in rows) {
+            val tags = TrackInfoMerge.merge(FileTags(row.title, row.artist, row.album, row.year, row.genre), fixes[row.fileKey])
+            val artistName = tags.artist ?: "Unknown artist"
+            val albumName = tags.album ?: row.albumShown
+            val artistId = if (tags.artist == row.artist) {
+                row.artistId
+            } else {
+                artistIdByName.getOrPut(TrackInfoMerge.norm(artistName)) { nameId("artist|" + TrackInfoMerge.norm(artistName)) }
+            }
+            val albumId = if (tags.album == row.album && tags.artist == row.artist) {
+                row.albumId
+            } else {
+                val key = albumKey(albumName, artistName)
+                albumIdByKey.getOrPut(key) { nameId("album|$key") }
+            }
+
+            tracks += TrackEntity(
+                id = row.id,
+                uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, row.id).toString(),
+                title = tags.title,
+                titleSortKey = tags.title.lowercase(),
+                artistId = artistId,
+                artistName = artistName,
+                albumId = albumId,
+                albumName = albumName,
+                trackNumber = row.trackNumber,
+                discNumber = row.discNumber,
+                durationMs = row.durationMs,
+                year = tags.year,
+                genre = tags.genre,
+                folderId = row.folderId,
+                folderName = row.folderName,
+                dateAddedMs = row.dateAddedMs,
+                fileKey = row.fileKey,
+                fileName = row.fileName,
+                fileArtistMissing = row.artist == null,
+                infoFixed = tags.fixed,
+            )
+
+            val albumAcc = albums.getOrPut(albumId) { AlbumAccumulator(albumId, albumName, artistId, artistName, tags.year) }
+            albumAcc.trackCount += 1
+            val artistAcc = artists.getOrPut(artistId) { ArtistAccumulator(artistId, artistName) }
+            artistAcc.trackCount += 1
+            artistAcc.albumIds.add(albumId)
         }
 
         val albumEntities = albums.values.map { acc ->
@@ -212,6 +287,18 @@ class MediaStoreScanner @Inject constructor(
             ),
         )
     }.flowOn(ioDispatcher)
+
+    private fun albumKey(album: String, artist: String) = TrackInfoMerge.norm(album) + "|" + TrackInfoMerge.norm(artist)
+
+    /** A stable negative id from a name (FNV-1a 64) — MediaStore's ids are positive. */
+    private fun nameId(name: String): Long {
+        var hash = -0x340d631b7bdddcdbL
+        for (c in name) {
+            hash = hash xor c.code.toLong()
+            hash *= 0x100000001b3L
+        }
+        return -(hash and Long.MAX_VALUE) - 1
+    }
 
     /** API 26–29: audio id → its genre name(s), joined with "; " when a track has several. */
     private fun readGenresPre30(): Map<Long, String> {

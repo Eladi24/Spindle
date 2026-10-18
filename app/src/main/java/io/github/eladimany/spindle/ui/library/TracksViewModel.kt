@@ -13,6 +13,9 @@ import io.github.eladimany.spindle.core.model.TrackSort
 import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.library.LibraryRepository
 import io.github.eladimany.spindle.data.library.toDomain
+import io.github.eladimany.spindle.data.prefs.SettingsRepository
+import io.github.eladimany.spindle.data.trackinfo.TrackInfoFixer
+import kotlinx.coroutines.flow.combine
 import io.github.eladimany.spindle.playback.PlaybackController
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +37,8 @@ class TracksViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
     private val playbackController: PlaybackController,
     private val artworkRepository: ArtworkRepository,
+    private val trackInfoFixer: TrackInfoFixer,
+    private val settingsRepository: SettingsRepository,
 ) : ViewModel() {
 
     private val _sort = MutableStateFlow(TrackSort.TITLE)
@@ -41,6 +46,21 @@ class TracksViewModel @Inject constructor(
 
     val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
     val isPlaying: StateFlow<Boolean> = playbackController.isPlaying
+
+    /**
+     * "N tracks have no artist" above the list: the count, or null when there are none or
+     * the user dismissed it at this count (it comes back only if more appear).
+     */
+    val trackInfoNotice: StateFlow<Int?> = combine(
+        trackInfoFixer.missingArtistCount,
+        settingsRepository.trackInfoNoticeDismissedAt,
+    ) { missing, dismissedAt -> missing.takeIf { it > 0 && it > dismissedAt } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun dismissTrackInfoNotice() {
+        val count = trackInfoNotice.value ?: return
+        viewModelScope.launch { settingsRepository.dismissTrackInfoNotice(count) }
+    }
 
     /** "1,284 tracks · 86 h" under the tab title. */
     val summary: StateFlow<String?> = libraryRepository.libraryStats

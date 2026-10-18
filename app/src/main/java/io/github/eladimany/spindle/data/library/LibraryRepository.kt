@@ -21,6 +21,7 @@ import io.github.eladimany.spindle.data.db.entity.AlbumEntity
 import io.github.eladimany.spindle.data.db.entity.ArtistEntity
 import io.github.eladimany.spindle.data.db.entity.TrackEntity
 import io.github.eladimany.spindle.data.prefs.SettingsRepository
+import io.github.eladimany.spindle.data.trackinfo.TrackInfoFixDao
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -40,6 +41,7 @@ class LibraryRepository @Inject constructor(
     private val folderDao: FolderDao,
     private val scanner: MediaStoreScanner,
     private val settings: SettingsRepository,
+    private val trackInfoFixDao: TrackInfoFixDao,
 ) {
     val tracks: Flow<List<Track>> = trackDao.observeAll().map { list -> list.map { it.toDomain() } }
     val albums: Flow<List<Album>> = albumDao.observeAll().map { list -> list.map { it.toDomain() } }
@@ -111,7 +113,8 @@ class LibraryRepository @Inject constructor(
     /** Runs a full MediaStore scan and persists the result, replacing anything removed. */
     fun rescan(): Flow<ScanProgress> = flow {
         val excludedFolderIds = settings.excludedFolderIds.first()
-        scanner.scan(excludedFolderIds).collect { progress ->
+        val fixes = trackInfoFixDao.getAll().associateBy { it.fileKey }
+        scanner.scan(excludedFolderIds, fixes).collect { progress ->
             if (progress is ScanProgress.Complete) {
                 trackDao.upsertAll(progress.result.tracks)
                 albumDao.upsertAll(progress.result.albums)

@@ -236,7 +236,7 @@ Found and fixed at the Node:
 ## Still to do — updated 2026-10-18
 
 Everything that still needs a real phone, in the order to run it. Tick the boxes here
-as you go. **Build: `Spindle-0.9.3-beta.apk`** (release). It installs over 0.9.x on the
+as you go. **Build: `Spindle-0.9.4-beta.apk`** (release). It installs over 0.9.x on the
 S25+ and keeps playlists, history and settings. Release builds have no Logcat output — if
 something fails, note what you saw and when; Claude can give you a debug build for a
 second run with logs.
@@ -330,6 +330,42 @@ money as long as billing stays off in Google.
       Playlists card has the "Say the vibe" prompt. There is **no** Free Gemini key card
       on this phone (Nano is used instead).
 - [ ] **D5. A playlist from words**, as in C5 — note speed and quality vs. the S25+.
+
+### E. Fix track info (new in 0.9.4-beta)
+
+Tracks whose file has no artist tag. Spindle reads "Artist - Title" from the title or file
+name, optionally checks with MusicBrainz, and saves the fix in Spindle only — **music files
+are never changed**. Already tested on the A73 without internet (notice, review, swap,
+untick, Apply, hand edit, undo, Manage folders entry, offline message). Still to test:
+
+On the **S25+** (real library, no internet needed for E1–E4):
+- [ ] **E1. Upgrade keeps everything.** After installing 0.9.4 over 0.9.3: playlists,
+      listening history and settings are all still there.
+- [ ] **E2. The notice.** Tracks tab → "N tracks have no artist" above the list. Note N.
+      ✕ hides it; it comes back only if more untagged tracks appear.
+- [ ] **E3. The review list.** Tracks → Review (or Folders → ⚙ Manage folders → Fix track
+      info). For 10 or so rows, check the artist/title split is right. Pink rows ("Which
+      side is the artist?") — is the guess usually right or usually backwards? Rows read
+      from a file name start unticked. Note any title that split wrongly (e.g. a song
+      with " - " in its name).
+- [ ] **E4. Apply** the ones that look right. **Expect:** they leave the list; the Artists
+      tab shows them under the right artist (joining it if it already existed); Albums
+      shows them under the folder's name as album (MusicBrainz fills the real album).
+
+With **internet** (S26+ or S25+):
+- [ ] **E5. Check with MusicBrainz.** On the review screen → Check with MusicBrainz first →
+      Look up. **Expect:** progress "MusicBrainz: n of N" (~1–2 s per track), rows gain
+      album · year · genre chips; a reversed split says "Turned around…". You can leave
+      the screen meanwhile. Note any wrong album or year (the rule picks the earliest
+      release — remasters and compilations should not win).
+- [ ] **E6. Library-wide fill-in.** In the same sheet, tick "Also N tracks missing year or
+      genre" (only shown if there are such tracks). Note N and how long it took; then
+      Apply and check a few tracks' year/genre in Smart shuffle / AI playlists chips.
+- [ ] **E7. Hand edit + look up.** Long-press any track → **Track info** → change a field →
+      "Look up the rest on MusicBrainz" fills empty fields → Save. Reopen: values kept.
+      **Use the file's info** puts the file's own info back.
+- [ ] **E8. No internet during a lookup.** Airplane mode, start a lookup. **Expect:**
+      "Couldn't reach MusicBrainz…" — no crash, and the Check button is offered again.
 
 ### What to send back
 

@@ -58,11 +58,13 @@ import io.github.eladimany.spindle.ui.components.TrackRow
 import io.github.eladimany.spindle.ui.components.glow
 import io.github.eladimany.spindle.ui.components.rememberScrollTapGuard
 import io.github.eladimany.spindle.ui.shuffle.SmartShuffleSheet
+import io.github.eladimany.spindle.ui.trackinfo.TrackInfoNotice
 import kotlinx.coroutines.launch
 
 @Composable
 fun TracksScreen(
     onSearchClick: () -> Unit = {},
+    onFixTrackInfo: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: TracksViewModel = hiltViewModel(),
 ) {
@@ -72,6 +74,7 @@ fun TracksScreen(
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val sectionIndex by viewModel.sectionIndex.collectAsStateWithLifecycle()
     val summary by viewModel.summary.collectAsStateWithLifecycle()
+    val trackInfoNotice by viewModel.trackInfoNotice.collectAsStateWithLifecycle()
     var showSortMenu by remember { mutableStateOf(false) }
     var actionsTarget by remember { mutableStateOf<List<Track>?>(null) }
     var scrubLetter by remember { mutableStateOf<Char?>(null) }
@@ -135,6 +138,10 @@ fun TracksScreen(
                         onSmartShuffle = tapGuard.guard(viewModel::smartShuffleAll),
                         onSmartShuffleSettings = { showSmartShuffleSheet = true },
                     )
+                    // In the header item, not its own: the fast-scroll anchors assume one header row.
+                    trackInfoNotice?.let { missing ->
+                        TrackInfoNotice(missing = missing, onReview = onFixTrackInfo, onDismiss = viewModel::dismissTrackInfoNotice)
+                    }
                 }
                 items(count = tracks.itemCount, key = tracks.itemKey { it.id }) { index ->
                     val track = tracks[index]

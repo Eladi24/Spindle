@@ -75,6 +75,7 @@ import io.github.eladimany.spindle.ui.playlists.PlaylistsScreen
 import io.github.eladimany.spindle.ui.search.SearchScope
 import io.github.eladimany.spindle.ui.search.SearchScreen
 import io.github.eladimany.spindle.ui.smartplaylists.AiSettingsScreen
+import io.github.eladimany.spindle.ui.trackinfo.TrackInfoFixScreen
 import io.github.eladimany.spindle.ui.smartplaylists.DraftPlaylistScreen
 import kotlinx.coroutines.launch
 
@@ -203,7 +204,10 @@ fun AppNavHost() {
                         .consumeWindowInsets(PaddingValues(bottom = innerPadding.calculateBottomPadding())),
                 ) {
                     composable(Routes.TRACKS) {
-                        TracksScreen(onSearchClick = { navController.navigate(Routes.search(SearchScope.TRACKS)) })
+                        TracksScreen(
+                            onSearchClick = { navController.navigate(Routes.search(SearchScope.TRACKS)) },
+                            onFixTrackInfo = { navController.navigate(Routes.TRACK_INFO_FIXES) },
+                        )
                     }
 
                     composable(Routes.ARTISTS) {
@@ -277,7 +281,15 @@ fun AppNavHost() {
                         PlaylistDetailScreen(onBack = { navController.popBackStack() })
                     }
 
-                    composable(Routes.MANAGE_FOLDERS) { FoldersScreen(onBack = { navController.popBackStack() }) }
+                    composable(Routes.MANAGE_FOLDERS) {
+                        FoldersScreen(
+                            onBack = { navController.popBackStack() },
+                            onFixTrackInfo = { navController.navigate(Routes.TRACK_INFO_FIXES) },
+                        )
+                    }
+                    composable(Routes.TRACK_INFO_FIXES) {
+                        TrackInfoFixScreen(onBack = { navController.popBackStack() })
+                    }
 
                     composable(Routes.QUEUE) {
                         QueueScreen(onBack = { navController.popBackStack() }, viewModel = playerViewModel)

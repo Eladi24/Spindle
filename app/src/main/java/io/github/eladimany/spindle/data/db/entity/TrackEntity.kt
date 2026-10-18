@@ -1,5 +1,6 @@
 package io.github.eladimany.spindle.data.db.entity
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -30,4 +31,11 @@ data class TrackEntity(
     val folderId: Long,
     val folderName: String,
     val dateAddedMs: Long,
+    /** Folder path + file name, lower-cased — what a track-info fix is keyed by (ids can change). */
+    @ColumnInfo(defaultValue = "") val fileKey: String = "",
+    @ColumnInfo(defaultValue = "") val fileName: String = "",
+    /** The file itself has no artist tag (MediaStore says "<unknown>"). */
+    @ColumnInfo(defaultValue = "0") val fileArtistMissing: Boolean = false,
+    /** Title/artist/album/year/genre here include a saved fix ([io.github.eladimany.spindle.data.trackinfo]). */
+    @ColumnInfo(defaultValue = "0") val infoFixed: Boolean = false,
 )

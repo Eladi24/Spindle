@@ -76,6 +76,24 @@ interface TrackDao {
     @Query("SELECT COUNT(*) AS trackCount, COALESCE(SUM(durationMs), 0) AS totalDurationMs FROM tracks")
     fun observeStats(): Flow<LibraryStats>
 
+    /** Tracks whose file has no artist and that have no fix yet — "Fix track info". */
+    @Query("SELECT * FROM tracks WHERE fileArtistMissing = 1 AND infoFixed = 0 ORDER BY titleSortKey")
+    suspend fun missingArtist(): List<TrackEntity>
+
+    @Query("SELECT COUNT(*) FROM tracks WHERE fileArtistMissing = 1 AND infoFixed = 0")
+    fun observeMissingArtistCount(): Flow<Int>
+
+    /** Tracks with an artist but no year or genre — candidates for the MusicBrainz fill-in. */
+    @Query("SELECT * FROM tracks WHERE (year IS NULL OR genre IS NULL) AND (fileArtistMissing = 0 OR infoFixed = 1)")
+    suspend fun missingYearOrGenre(): List<TrackEntity>
+
+    @Query("SELECT fileKey FROM tracks WHERE (year IS NULL OR genre IS NULL) AND (fileArtistMissing = 0 OR infoFixed = 1)")
+    fun observeMissingYearOrGenreKeys(): Flow<List<String>>
+
+    /** Artists as tagged in the files — they decide which side of "A - B" is the artist. */
+    @Query("SELECT DISTINCT artistName FROM tracks WHERE fileArtistMissing = 0")
+    suspend fun taggedArtistNames(): List<String>
+
     @Upsert
     suspend fun upsertAll(tracks: List<TrackEntity>)
 

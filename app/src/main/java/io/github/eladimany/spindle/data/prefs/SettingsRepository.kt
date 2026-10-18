@@ -5,6 +5,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -76,6 +77,17 @@ class SettingsRepository @Inject constructor(
             val current = prefs[boostedTrackKeysKey].orEmpty()
             prefs[boostedTrackKeysKey] = if (boosted) current + trackKey.toString() else current - trackKey.toString()
         }
+    }
+
+    // "N tracks have no artist" on Tracks: dismissed at that N; shows again only if more appear.
+    private val trackInfoNoticeDismissedKey = intPreferencesKey("track_info_notice_dismissed_at")
+
+    val trackInfoNoticeDismissedAt: Flow<Int> = context.dataStore.data.map { prefs ->
+        prefs[trackInfoNoticeDismissedKey] ?: 0
+    }
+
+    suspend fun dismissTrackInfoNotice(count: Int) {
+        context.dataStore.edit { prefs -> prefs[trackInfoNoticeDismissedKey] = count }
     }
 
     suspend fun setFolderExcluded(folderId: Long, excluded: Boolean) {

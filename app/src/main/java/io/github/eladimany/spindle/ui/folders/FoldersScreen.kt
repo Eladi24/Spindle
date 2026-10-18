@@ -1,5 +1,6 @@
 package io.github.eladimany.spindle.ui.folders
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -10,11 +11,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
@@ -33,6 +37,7 @@ import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
 @Composable
 fun FoldersScreen(
     onBack: () -> Unit,
+    onFixTrackInfo: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: FoldersViewModel = hiltViewModel(),
 ) {
@@ -72,6 +77,17 @@ fun FoldersScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(16.dp),
                 )
+            }
+            item {
+                // Missing artist/album/year/genre: fixed in Spindle's own copy, files untouched.
+                ListItem(
+                    headlineContent = { Text("Fix track info") },
+                    supportingContent = { Text("Tracks with no artist, or missing year and genre") },
+                    leadingContent = { Icon(Icons.Outlined.EditNote, contentDescription = null) },
+                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null) },
+                    modifier = Modifier.clickable(onClick = onFixTrackInfo),
+                )
+                HorizontalDivider()
             }
             items(folders, key = { it.id }) { folder ->
                 FolderRow(folder, onToggle = { included -> viewModel.setFolderExcluded(folder.id, !included) })

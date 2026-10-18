@@ -12,18 +12,14 @@ Trust that file over any assumption about BluOS.
 
 ## ▶ Next session — start here (updated 2026-10-18)
 
-**State:** everything committed and pushed. Release **0.9.3-beta (versionCode 4)** —
-the user has `Spindle-0.9.3-beta.apk` and runs the whole real-phone list in
-`docs/PHASE3-NODE-TESTS.md`, "Still to do — updated 2026-10-18" (A: S25+ screen-off at
-the Node, B: rest of the Node list, C: S25+ free Gemini key, D: S26+ Nano download).
-Start by asking for those results.
+**State:** Release **0.9.4-beta (versionCode 5)** — the user has `Spindle-0.9.4-beta.apk`
+and runs the whole real-phone list in `docs/PHASE3-NODE-TESTS.md`, "Still to do — updated
+2026-10-18" (A: S25+ screen-off at the Node, B: rest of the Node list, C: S25+ free Gemini
+key, D: S26+ Nano download, E: Fix track info). Start by asking for those results.
+Check `git status`/`git log origin/main..` — the track-info commit may not be pushed yet.
 
-**Open design question — tracks with only a title on the S25+** (user, 2026-10-18): some
-files have no artist/album tags; some titles start with the artist ("Artist - Title").
-Proposed, waiting for the user's answer + a mockup: (1) offline, split "Artist - Title"
-from the title/filename; (2) opt-in MusicBrainz lookup per track to confirm the split and
-fill album/year/genre; stored in Spindle's own table, file tags always win, a review
-screen before applying. AcoustID (audio fingerprint) only if titles are useless.
+**Fix track info** (built 2026-10-18, see its section near the end): tested on the A73
+offline only; MusicBrainz lookups never ran on a phone (E5–E8).
 
 **Waiting on the Node** (`docs/PHASE3-NODE-TESTS.md`, "Still to do" at the end): 3b
 (whole album, screen off, S25+ — now also the SessionPlayer test), the WiFi-drop/IP-change
@@ -1699,3 +1695,52 @@ AICore's, shared by all apps). Now:
   "Download stopped. Android may keep the part it already fetched…"; still Downloading →
   "Android is finishing the download by itself…" (followed again). Which one AICore does
   is unknown until tried on the S26+ (test D3). Not runnable on the A73 (Unavailable).
+
+### Fix track info — built 2026-10-18 (mockup "Spindle track info fixes")
+
+User report (S25+): tracks with only a title, some titles starting with the artist. Canvas
+https://claude.ai/artifact/7sANPwVRixuJBv52HiB8wi, screens 1–5, all approved (notice on
+Tracks + Manage folders entry; hand edit for any track; library-wide year/genre fill-in).
+**Music files are never written** — fixes live in Spindle's own table.
+- **`data/trackinfo/`:** `TrackInfoFixEntity` (table `track_info_fixes` in **HistoryDatabase**,
+  v1→v2 real migration — user data that a rescan can't rebuild), keyed by `fileKey` =
+  RELATIVE_PATH + DISPLAY_NAME lower-cased (DATA before API 29) so it survives MediaStore id
+  changes. `TrackInfoMerge` (pure): a manual fix wins field by field; an automatic one
+  (title split / MusicBrainz) only fills what the file lacks, and a split stops applying if
+  the file's title changes (`splitFrom`). `TitleSplitter` (pure): " - ", " – ", " — ";
+  strips a leading track number; version notes ("- Remastered 2012", "- Live") aren't
+  splits; a side already tagged as an artist in the library decides the order, else left =
+  artist and `sure = false` (pink row). `TrackInfoFixer` (singleton): review session,
+  lookup job (survives leaving the screen), apply → upsert fixes → `rescan()`.
+- **Scanner applies fixes** (`MediaStoreScanner`, now two passes): "<unknown>" artist → null;
+  an untagged file's album = its folder name in MediaStore → treated as missing when the
+  artist is missing. A fixed artist/album joins an existing one by normalized name, else
+  gets a stable negative id (FNV-1a of the name) — MediaStore ids are positive.
+- **AppDatabase 4→5 is a real migration (`MIGRATION_4_5`)** — new track columns `fileKey`,
+  `fileName`, `fileArtistMissing`, `infoFixed`. Destructive fallback now only from 1–3:
+  **playlists live in this DB** and beta users have real ones. Every future schema change
+  here needs a Migration. Verified on the A73: "Library mix" survived the upgrade.
+- **MusicBrainz** (`MusicBrainzApi` pure + `MusicBrainzClient`): recording search
+  `recording:"T" AND artist:"A"`, limit 100, UA `Spindle/<version> ( github url )`, paced
+  1.1 s, 503 → wait 3 s, retry once. **Measured on the live service:** the top hit for
+  "Highway Star" was a 2024 remix and the 1972 original wasn't in the top 15; `NOT
+  secondarytype:compilation` drops the original too (multi-valued field). So: year =
+  earliest first-release-date across all recordings with that title (notes in brackets
+  ignored) by that artist; album = earliest official Album release with no secondary types
+  among them. Right for Highway Star (Machine Head 1972), Still Got the Blues (1990), Hotel
+  California (1976); wrong for Green Onions (credited differently). Search results carry
+  no genre → artist's top genre via `/artist/{id}?inc=genres`, cached per artist. Offline,
+  Ktor CIO throws `UnresolvedAddressException` (not an IOException) — the client wraps
+  every failure in IOException (crashed the A73 before that).
+- **UI (`ui/trackinfo/`):** `TrackInfoNotice` inside Tracks' header item (the fast-scroll
+  anchors assume one header row; dismissed count in DataStore, shows again only when more
+  appear); `TrackInfoFixScreen` (route `track_info_fixes`, also from Manage folders);
+  `LookupSheet`; `TrackInfoSheet` from the track long-press menu ("Track info", single
+  track) and the review screen's Edit. The review bottom bar pads by the raw navigation-bar
+  inset (the nav host already consumed it) or the mini-player overlay, whichever is taller.
+- **Found on the A73:** form prefilled "Unknown artist"/folder name as values; the edit
+  sheet closed itself when reopened after a save (stale `done` in the per-track view model —
+  now cleared when handled).
+- Known: history `trackKey` hashes artist/album/title, so a fixed track starts a new
+  history key (its old listens stay under the old one). Fill-in "not found" isn't
+  remembered, so those tracks are looked up again next time.

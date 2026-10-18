@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.outlined.EditNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -21,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.ui.playlists.AddToPlaylistSheet
+import io.github.eladimany.spindle.ui.trackinfo.TrackInfoSheet
 
 /**
  * The long-press menu for a track row anywhere in the library — "Add to Queue" acts
@@ -34,9 +36,14 @@ fun TrackActionsSheet(
     onDismiss: () -> Unit,
 ) {
     var showPlaylistPicker by remember { mutableStateOf(false) }
+    var showTrackInfo by remember { mutableStateOf(false) }
 
     if (showPlaylistPicker) {
         AddToPlaylistSheet(trackIds = tracks.map { it.id }, onDismiss = onDismiss)
+        return
+    }
+    if (showTrackInfo) {
+        TrackInfoSheet(trackId = tracks.single().id, onDismiss = onDismiss)
         return
     }
 
@@ -54,6 +61,14 @@ fun TrackActionsSheet(
             label = "Add to playlist",
             onClick = { showPlaylistPicker = true },
         )
+        // Fixing title/artist/album/year/genre is one track at a time.
+        if (tracks.size == 1) {
+            TrackActionRow(
+                icon = Icons.Outlined.EditNote,
+                label = "Track info",
+                onClick = { showTrackInfo = true },
+            )
+        }
     }
 }
 
