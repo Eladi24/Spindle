@@ -1,6 +1,5 @@
 package io.github.eladimany.spindle.ui.smartplaylists
 
-import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
@@ -43,7 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -84,8 +82,8 @@ sealed interface KeySetup {
     data object Guide : KeySetup
 
     /**
-     * AI Studio is open in the browser. [leftApp] flips once Spindle loses focus, so the
-     * clipboard is read on the way *back* — not the instant the button is tapped.
+     * AI Studio is open in the browser. [leftApp] flips once the sheet loses window focus,
+     * so the clipboard is read on the way *back* — not the instant the button is tapped.
      */
     data class WaitingForCopy(val leftApp: Boolean = false) : KeySetup
 
@@ -209,20 +207,6 @@ fun AiSettingsScreen(onBack: () -> Unit, viewModel: AiSettingsViewModel = hiltVi
     val colors = MaterialTheme.colorScheme
     val context = LocalContext.current
 
-    // Back from AI Studio: read what the user copied. Android only lets the focused app
-    // read the clipboard, so this waits for window focus rather than ON_RESUME.
-    val focused = LocalWindowInfo.current.isWindowFocused
-    LaunchedEffect(focused, setup) {
-        val waiting = setup as? KeySetup.WaitingForCopy ?: return@LaunchedEffect
-        when {
-            !focused -> viewModel.leftApp()
-            waiting.leftApp -> {
-                val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
-                viewModel.returned(clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context))
-            }
-        }
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -285,6 +269,8 @@ fun AiSettingsScreen(onBack: () -> Unit, viewModel: AiSettingsViewModel = hiltVi
                 viewModel.openedKeyPage()
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GeminiApi.KEY_PAGE_URL)))
             },
+            onLeftApp = viewModel::leftApp,
+            onReturned = viewModel::returned,
             onEdit = viewModel::edit,
             onCheck = viewModel::check,
             onUseKey = viewModel::useKey,

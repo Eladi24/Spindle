@@ -1,5 +1,6 @@
 package io.github.eladimany.spindle.ui.smartplaylists
 
+import android.content.ClipboardManager
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -32,10 +33,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -57,6 +61,8 @@ import io.github.eladimany.spindle.ui.components.glow
 fun KeySetupSheet(
     setup: KeySetup,
     onOpenKeyPage: () -> Unit,
+    onLeftApp: () -> Unit,
+    onReturned: (CharSequence?) -> Unit,
     onEdit: (String) -> Unit,
     onCheck: () -> Unit,
     onUseKey: () -> Unit,
@@ -65,6 +71,21 @@ fun KeySetupSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        // Back from AI Studio: read what the user copied. Android only lets the focused
+        // window read the clipboard, so wait for focus — and it must be the sheet's own
+        // window: the sheet is a separate window, the screen behind it never regains focus.
+        val context = LocalContext.current
+        val focused = LocalWindowInfo.current.isWindowFocused
+        LaunchedEffect(focused, setup) {
+            val waiting = setup as? KeySetup.WaitingForCopy ?: return@LaunchedEffect
+            when {
+                !focused -> onLeftApp()
+                waiting.leftApp -> {
+                    val clip = context.getSystemService(ClipboardManager::class.java)?.primaryClip
+                    onReturned(clip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(context))
+                }
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
