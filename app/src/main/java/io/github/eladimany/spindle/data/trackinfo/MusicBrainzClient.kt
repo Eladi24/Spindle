@@ -16,6 +16,9 @@ import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** MusicBrainz kept answering 503 — it's up, but too busy right now. */
+class MusicBrainzBusyException : IOException("MusicBrainz is busy")
+
 /** A MusicBrainz match plus whether the artist turned out to be the other side of the split. */
 data class LookupResult(val match: MusicBrainzMatch, val genre: String?, val swapped: Boolean)
 
@@ -54,9 +57,13 @@ class MusicBrainzClient @Inject constructor() {
         return MusicBrainzApi.artistGenre(get(MusicBrainzApi.artistUrl(id))).also { genreByArtistId[id] = it }
     }
 
-    /** One paced GET; on 503 (MusicBrainz busy / over the rate) waits and tries once more. */
+    /**
+     * One paced GET. On 503 waits and tries again, longer each time: MusicBrainz sheds
+     * load at random when it's busy (measured 2026-10-20: about 1 in 5 requests, sometimes
+     * two in a row, even well under 1/s — `X-RateLimit-Who: global` / `search-shed`).
+     */
     private suspend fun get(url: String): String {
-        repeat(2) { attempt ->
+        repeat(BUSY_WAITS_MS.size + 1) { attempt ->
             val response = try {
                 paced {
                     httpClient.get(url) {
@@ -75,11 +82,11 @@ class MusicBrainzClient @Inject constructor() {
             when (response.status.value) {
                 in 200..299 -> return response.bodyAsText()
                 404 -> return "{}"
-                503 -> if (attempt == 0) delay(BUSY_WAIT_MS)
+                503 -> BUSY_WAITS_MS.getOrNull(attempt)?.let { delay(it) }
                 else -> throw IOException("MusicBrainz answered ${response.status.value}")
             }
         }
-        throw IOException("MusicBrainz is busy")
+        throw MusicBrainzBusyException()
     }
 
     private suspend fun <T> paced(block: suspend () -> T): T = pace.withLock {
@@ -95,7 +102,8 @@ class MusicBrainzClient @Inject constructor() {
     private companion object {
         /** MusicBrainz's limit is 1/s per client; a little slack avoids 503s. */
         const val MIN_GAP_MS = 1_100L
-        const val BUSY_WAIT_MS = 3_000L
+        /** About 45 s in all before giving up on one request. */
+        val BUSY_WAITS_MS = longArrayOf(2_000L, 4_000L, 8_000L, 12_000L, 20_000L)
         val USER_AGENT = "Spindle/${BuildConfig.VERSION_NAME} ( https://github.com/Eladi24/Spindle )"
     }
 }

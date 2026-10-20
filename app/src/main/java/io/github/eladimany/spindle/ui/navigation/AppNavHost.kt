@@ -72,6 +72,7 @@ import io.github.eladimany.spindle.ui.player.PlayerViewModel
 import io.github.eladimany.spindle.ui.player.QueueScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistDetailScreen
 import io.github.eladimany.spindle.ui.playlists.PlaylistsScreen
+import io.github.eladimany.spindle.core.model.TrackSort
 import io.github.eladimany.spindle.ui.search.SearchScope
 import io.github.eladimany.spindle.ui.search.SearchScreen
 import io.github.eladimany.spindle.ui.smartplaylists.AiSettingsScreen
@@ -205,7 +206,7 @@ fun AppNavHost() {
                 ) {
                     composable(Routes.TRACKS) {
                         TracksScreen(
-                            onSearchClick = { navController.navigate(Routes.search(SearchScope.TRACKS)) },
+                            onSearchClick = { sort -> navController.navigate(Routes.search(SearchScope.TRACKS, sort)) },
                             onFixTrackInfo = { navController.navigate(Routes.TRACK_INFO_FIXES) },
                         )
                     }
@@ -297,7 +298,10 @@ fun AppNavHost() {
 
                     composable(
                         Routes.SEARCH_PATTERN,
-                        arguments = listOf(navArgument("scope") { type = NavType.StringType; defaultValue = SearchScope.ALL.name }),
+                        arguments = listOf(
+                            navArgument("scope") { type = NavType.StringType; defaultValue = SearchScope.ALL.name },
+                            navArgument("sort") { type = NavType.StringType; defaultValue = TrackSort.TITLE.name },
+                        ),
                     ) {
                         SearchScreen(
                             onBack = { navController.popBackStack() },

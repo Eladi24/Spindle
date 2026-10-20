@@ -63,7 +63,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun TracksScreen(
-    onSearchClick: () -> Unit = {},
+    onSearchClick: (TrackSort) -> Unit = {},
     onFixTrackInfo: () -> Unit = {},
     modifier: Modifier = Modifier,
     viewModel: TracksViewModel = hiltViewModel(),
@@ -93,7 +93,7 @@ fun TracksScreen(
         modifier = modifier,
         topBar = {
             LargeTitleBar(title = "Tracks", subtitle = summary) {
-                GlassIconButton(onClick = onSearchClick) {
+                GlassIconButton(onClick = { onSearchClick(sort) }) {
                     Icon(Icons.Default.Search, contentDescription = "Search")
                 }
                 Box {

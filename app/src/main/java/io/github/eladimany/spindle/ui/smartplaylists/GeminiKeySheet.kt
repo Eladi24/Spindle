@@ -223,7 +223,7 @@ private fun EntryContent(
             Text(GeminiApi.mask(entry.text), fontFamily = FontFamily.Monospace, letterSpacing = 1.sp)
         }
     } else {
-        SheetTitle("Paste your key", "From Google AI Studio — it starts with “AIza”.")
+        SheetTitle("Paste your key", "The key you copied in Google AI Studio.")
         entry.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = colors.onSurfaceVariant) }
         OutlinedTextField(
             value = entry.text,

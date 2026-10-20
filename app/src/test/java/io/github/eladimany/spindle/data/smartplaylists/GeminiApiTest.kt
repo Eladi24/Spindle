@@ -17,6 +17,9 @@ class GeminiApiTest {
         assertNull(GeminiApi.findKey("hello"))
         assertNull(GeminiApi.findKey(null))
         assertNull(GeminiApi.findKey("AIzashort"))
+        // Newer AI Studio keys don't start with "AIza".
+        val newKey = "AQ.Ab8RN6Lx3mpl3K3yF0rT3st1ngOnly_abc-k3Fq9Zt"
+        assertEquals(newKey, GeminiApi.findKey("Key: $newKey "))
     }
 
     @Test

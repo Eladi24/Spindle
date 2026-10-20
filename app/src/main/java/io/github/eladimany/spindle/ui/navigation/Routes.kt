@@ -1,5 +1,6 @@
 package io.github.eladimany.spindle.ui.navigation
 
+import io.github.eladimany.spindle.core.model.TrackSort
 import io.github.eladimany.spindle.ui.search.SearchScope
 
 object Routes {
@@ -10,8 +11,10 @@ object Routes {
     const val PLAYLISTS = "playlists"
     const val MANAGE_FOLDERS = "manage_folders"
     const val QUEUE = "queue"
-    const val SEARCH_PATTERN = "search?scope={scope}"
-    fun search(scope: SearchScope = SearchScope.ALL) = "search?scope=${scope.name}"
+    const val SEARCH_PATTERN = "search?scope={scope}&sort={sort}"
+    /** [sort]: the library order a tapped track's queue follows (the Tracks tab's sort). */
+    fun search(scope: SearchScope = SearchScope.ALL, sort: TrackSort = TrackSort.TITLE) =
+        "search?scope=${scope.name}&sort=${sort.name}"
     const val PLAYLIST_DRAFT = "playlist_draft"
     const val AI_SETTINGS = "ai_settings"
     const val TRACK_INFO_FIXES = "track_info_fixes"

@@ -7,6 +7,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Artist
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.core.model.TrackSort
 import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.library.LibraryRepository
 import io.github.eladimany.spindle.playback.PlaybackController
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /**
  * What a search looks through — set by the tab it was opened from: Tracks searches only
@@ -54,6 +56,11 @@ class SearchViewModel @Inject constructor(
         ?.let { name -> SearchScope.entries.firstOrNull { it.name == name } }
         ?: SearchScope.ALL
 
+    /** The Tracks tab's sort when the search was opened — a tapped track's queue follows it. */
+    private val sort: TrackSort = savedStateHandle.get<String>("sort")
+        ?.let { name -> TrackSort.entries.firstOrNull { it.name == name } }
+        ?: TrackSort.TITLE
+
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
 
@@ -82,10 +89,13 @@ class SearchViewModel @Inject constructor(
         _query.value = text
     }
 
+    /** Plays the whole library from [track], as tapping it on the Tracks tab would — not just the matches. */
     fun playTrack(track: Track) {
-        val all = results.value.tracks
-        val startIndex = all.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
-        playbackController.playTracks(all, startIndex)
+        viewModelScope.launch {
+            val all = libraryRepository.allTracksSorted(sort)
+            val startIndex = all.indexOfFirst { it.id == track.id }
+            if (startIndex >= 0) playbackController.playTracks(all, startIndex) else playbackController.playTracks(listOf(track))
+        }
     }
 
     fun addToQueue(tracks: List<Track>) = playbackController.addToQueue(tracks)

@@ -153,34 +153,61 @@ class TrackInfoFixer @Inject constructor(
         val start = _session.value ?: return
         if (lookupJob?.isActive == true) return
         lookupJob = scope.launch {
-            val splitTargets = if (includeSplits) start.splits.filter { it.selected } else emptyList()
-            val fillTargets = if (alsoFillIn) fillInTargets() else emptyList()
+            // A second run (after an error) skips what an earlier one already answered.
+            val splitTargets = if (includeSplits) start.splits.filter { it.selected && it.lookup == RowLookup.NotYet } else emptyList()
+            val alreadyFilled = start.fillIns.mapTo(HashSet()) { it.trackId }
+            val fillTargets = if (alsoFillIn) fillInTargets().filter { it.trackId !in alreadyFilled } else emptyList()
             val total = splitTargets.size + fillTargets.size
             var done = 0
+            // One track failing (MusicBrainz busy, a slow reply) skips that track; only
+            // failures in a row mean MusicBrainz is out of reach, and stop the run.
+            var failuresInARow = 0
+            var skipped = 0
             _session.update { it?.copy(lookup = LookupProgress(0, total, running = true)) }
+
+            /** The answer, and false when this track was skipped. */
+            suspend fun lookUp(row: FixRow, maybeSwapped: Boolean): Pair<LookupResult?, Boolean> = try {
+                val result = withContext(io) { musicBrainz.lookup(row.artist, row.title, maybeSwapped) }
+                failuresInARow = 0
+                result to true
+            } catch (e: IOException) {
+                if (++failuresInARow >= MAX_FAILURES_IN_A_ROW) throw e
+                Timber.i(e, "MusicBrainz lookup skipped a track")
+                skipped++
+                null to false
+            }
+
             try {
                 for (row in splitTargets) {
-                    val result = withContext(io) { musicBrainz.lookup(row.artist, row.title, maybeSwapped = true) }
-                    updateRows(row.trackId) { current -> current.withLookup(result) }
+                    val (result, answered) = lookUp(row, maybeSwapped = true)
+                    if (answered) updateRows(row.trackId) { current -> current.withLookup(result) }
                     done++
                     _session.update { it?.copy(lookup = LookupProgress(done, total, running = true)) }
                 }
                 for (row in fillTargets) {
-                    val result = withContext(io) { musicBrainz.lookup(row.artist, row.title, maybeSwapped = false) }
+                    val (result, answered) = lookUp(row, maybeSwapped = false)
                     val filled = row.withLookup(result)
-                    if (filled.lookup is RowLookup.Found) _session.update { it?.copy(fillIns = it.fillIns + filled) }
+                    if (answered && filled.lookup is RowLookup.Found) _session.update { it?.copy(fillIns = it.fillIns + filled) }
                     done++
                     _session.update { it?.copy(lookup = LookupProgress(done, total, running = true)) }
                 }
-                _session.update { it?.copy(lookup = LookupProgress(done, total, running = false)) }
+                val note = when (skipped) {
+                    0 -> null
+                    1 -> "MusicBrainz was busy for 1 track — tap Look up again to retry it."
+                    else -> "MusicBrainz was busy for $skipped tracks — tap Look up again to retry them."
+                }
+                _session.update { it?.copy(lookup = LookupProgress(done, total, running = false, error = note)) }
             } catch (e: CancellationException) {
                 _session.update { it?.copy(lookup = it.lookup?.copy(running = false)) }
                 throw e
             } catch (e: IOException) {
                 Timber.w(e, "MusicBrainz lookup stopped")
-                _session.update {
-                    it?.copy(lookup = LookupProgress(done, total, running = false, error = "Couldn't reach MusicBrainz. Check the internet connection — what was found so far is kept."))
+                val message = if (e is MusicBrainzBusyException) {
+                    "MusicBrainz is too busy right now. Try again in a few minutes — what was found so far is kept."
+                } else {
+                    "Couldn't reach MusicBrainz. Check the internet connection — what was found so far is kept."
                 }
+                _session.update { it?.copy(lookup = LookupProgress(done, total, running = false, error = message)) }
             }
         }
     }
@@ -300,4 +327,9 @@ class TrackInfoFixer @Inject constructor(
     /** "Look up the rest" on the edit sheet. Throws [IOException] when offline. */
     suspend fun lookupOne(artist: String, title: String): LookupResult? =
         withContext(io) { musicBrainz.lookup(artist, title, maybeSwapped = true) }
+
+    private companion object {
+        /** Each failure already retried for ~45 s (MusicBrainzClient), so 3 in a row ≈ out of reach. */
+        const val MAX_FAILURES_IN_A_ROW = 3
+    }
 }

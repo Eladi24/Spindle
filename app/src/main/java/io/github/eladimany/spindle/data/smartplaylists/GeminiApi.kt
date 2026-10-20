@@ -30,11 +30,15 @@ object GeminiApi {
 
     fun generateUrl(model: String) = "$BASE_URL/models/$model:generateContent"
 
-    /** AI Studio keys: "AIza" + 35 more of [A-Za-z0-9_-]. Loose on length in case Google changes it. */
-    private val KEY_PATTERN = Regex("AIza[0-9A-Za-z_-]{30,60}")
+    /**
+     * Any key-shaped run of characters. No fixed prefix: AI Studio has handed out both
+     * "AIza…" keys and newer "AQ.…" ones, and Google may change it again — the check
+     * against Google decides whether it actually works.
+     */
+    private val KEY_PATTERN = Regex("[0-9A-Za-z._~+=-]{30,200}")
 
     /** The key inside copied text (AI Studio's Copy gives just the key, but tolerate spaces/quotes). */
-    fun findKey(text: CharSequence?): String? = text?.let { KEY_PATTERN.find(it)?.value }
+    fun findKey(text: CharSequence?): String? = text?.let { t -> KEY_PATTERN.findAll(t).maxByOrNull { it.value.length }?.value }
 
     /** "AIza••••••••k3Fq" — enough to recognise, not enough to use. */
     fun mask(key: String): String = if (key.length <= 8) "••••" else key.take(4) + "••••••••" + key.takeLast(4)

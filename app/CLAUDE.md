@@ -10,15 +10,31 @@ Do not write a playback engine for that path.
 Protocol facts were measured against real hardware — see `docs/bluos-api.md`.
 Trust that file over any assumption about BluOS.
 
-## ▶ Next session — start here (updated 2026-10-18)
+## ▶ Next session — start here (updated 2026-10-20)
 
-**State:** Release **0.9.4-beta (versionCode 5)** — the user has `Spindle-0.9.4-beta.apk`
-and runs the whole real-phone list in `docs/PHASE3-NODE-TESTS.md`, "Still to do — updated
-2026-10-18" (A: S25+ screen-off at the Node, B: rest of the Node list, C: S25+ free Gemini
-key, D: S26+ Nano download, E: Fix track info). Start by asking for those results.
+**State:** Release **0.9.5-beta (versionCode 6)** built as `Spindle-0.9.5-beta.apk`
+(not yet handed out). The user tested 0.9.4 and reported three bugs, fixed 2026-10-20:
 
-**Fix track info** (built 2026-10-18, see its section near the end): tested on the A73
-offline only; MusicBrainz lookups never ran on a phone (E5–E8).
+1. **Gemini key prefix** — AI Studio now also hands out keys starting "AQ." (not
+   "AIza"). `GeminiApi.findKey` accepts any key-shaped run (30–200 of
+   `[A-Za-z0-9._~+=-]`, longest wins); Google's check decides if it works.
+2. **Search queue** — tapping a track in Search played only the matches. Now it plays
+   the whole library from that track, in the Tracks tab's sort (passed as the `sort`
+   route arg). Verified on the A73 ("Track 4 of 10").
+3. **Fix track info lookups stopped after ~2** — MusicBrainz sheds ~1 in 5 requests
+   with 503 when busy (`X-RateLimit-Who: global` / `search-shed`), sometimes twice in a
+   row; the client retried once and then the whole run died. Now: 503 backoff
+   2/4/8/12/20 s, a track that still fails is skipped (note + "Look up" again retries
+   only unanswered rows), and only 3 failures in a row stop the run. Verified with 12
+   live lookups from the JVM (several needed retries, all succeeded); the A73's library
+   has nothing to fix, so not run in the UI on a phone.
+
+Noticed, not fixed: "Smoke on the Water" matched album "Rapture of the Deep", year 1974
+(should be Machine Head, 1972) — the earliest-official-album pick in
+`MusicBrainzApi.bestMatch` can be fooled.
+
+Still open from the 0.9.4 real-phone list in `docs/PHASE3-NODE-TESTS.md` ("Still to do —
+updated 2026-10-18"): ask which of A–E the user ran.
 
 **Waiting on the Node** (`docs/PHASE3-NODE-TESTS.md`, "Still to do" at the end): 3b
 (whole album, screen off, S25+ — now also the SessionPlayer test), the WiFi-drop/IP-change

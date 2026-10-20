@@ -172,7 +172,7 @@ class AiSettingsViewModel @Inject constructor(
         val entry = _setup.value as? KeySetup.Entry ?: return
         val key = GeminiApi.findKey(entry.text)
         if (key == null) {
-            _setup.value = entry.copy(check = CheckState.Failed("That doesn't look like a Gemini key — it starts with “AIza”."))
+            _setup.value = entry.copy(check = CheckState.Failed("That doesn't look like a Gemini key. Copy it again from AI Studio."))
             return
         }
         checkJob?.cancel()
