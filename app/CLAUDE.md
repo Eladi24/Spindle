@@ -43,6 +43,18 @@ User report on 0.9.5 (S26+, 2026-10-22) and what was done:
      back on ImanyFiber → resumed at the right place within a second. **Not run on the
      real Node** — it wasn't reachable that day (no ping/mDNS on ImanyFiber).
    - Advice for the user: forget ImanyHome on the phone, or put the Node on the same network.
+   - **Then run on the real Node (2026-10-22 evening, A73, Node at 10.0.0.2 wired to
+     ImanyFiber):** natural ends advance (incl. "served to end"). **Root cause of the stuck
+     end found:** the Node misreads some files' length — Castellorizon (MP3 64 kb/s, 234 s)
+     reported totlen 872; the old code judged the stop at 234 "mid-track" and froze. Now
+     "234 s of 872 s (file 234 s) → track ended", and the UI shows the shorter length. The
+     A73 hopped to ImanyHome **by itself** mid-song: outage → Node `connecting` 10 s → `stop`
+     → fetch watchdog + Toast; hopped back → retried by itself. **Fixed there:** a network
+     change during an outage replayed from 0 and overwrote the resume point
+     (`onNetworkChanged` now returns while `outage != null`). Screen locked, battery
+     "Optimized", 3 songs: heartbeats every 30 s with no gaps, every end advanced.
+   - `PlaybackDiagnostics` (from `App`): screen on/off, Doze, power saving, battery setting
+     at Node connect, a heartbeat every 30 s while playing on a Node — a gap = app frozen.
 3. **Bluetooth:** "This phone" pins the speaker, so earbuds connecting later stayed silent.
    `BluetoothAutoSwitch` (started from `App`): a newly connected A2DP device becomes the pinned
    route; on a Node it switches to the phone; when the pinned one disconnects, back to the

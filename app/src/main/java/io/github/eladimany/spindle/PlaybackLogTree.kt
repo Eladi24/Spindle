@@ -45,6 +45,6 @@ class PlaybackLogTree(context: Context) : Timber.DebugTree() {
     private companion object {
         const val FILE = "playback-log.txt"
         const val MAX_BYTES = 512 * 1024L
-        val KEEP = listOf("NodeOutput", "MediaHttpServer", "PlaybackController", "BluetoothAutoSwitch", "AudioOutputSwitcher")
+        val KEEP = listOf("NodeOutput", "MediaHttpServer", "PlaybackController", "BluetoothAutoSwitch", "AudioOutputSwitcher", "PlaybackDiagnostics")
     }
 }

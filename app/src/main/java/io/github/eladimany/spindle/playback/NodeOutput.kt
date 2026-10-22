@@ -686,8 +686,11 @@ class NodeOutput @Inject constructor(
                 // UNKNOWN here = a foreign stream inside the post-/Play grace window; not ours to display.
                 if (verdict != NodeOwnership.Verdict.OURS) return
                 streamCanSeek = status.canSeek
-                lastKnownTotalSeconds = status.totalSeconds
-                val durationMs = (status.totalSeconds ?: 0) * 1000L
+                // The Node estimates some files' length badly (a 64 kb/s MP3 of 3:54 read
+                // as 14:32 at the real Node) — the file's own length wins when it's shorter.
+                lastKnownTotalSeconds = listOfNotNull(status.totalSeconds, (item.track.durationMs / 1000).toInt())
+                    .filter { it > 0 }.minOrNull()
+                val durationMs = (lastKnownTotalSeconds ?: 0) * 1000L
                 pendingSeekSeconds?.let { target ->
                     if (status.canSeek) {
                         pendingSeekSeconds = null
@@ -712,7 +715,7 @@ class NodeOutput @Inject constructor(
                 }
                 lastKnownSecs = status.secs
                 _state.value = PlaybackState.Playing(item, status.secs * 1000L, durationMs)
-                scheduleEndCheck(item, status.secs, status.totalSeconds)
+                scheduleEndCheck(item, status.secs, lastKnownTotalSeconds)
             }
             // Unverified against real hardware — Phase 0 only ever observed
             // "stream"/"stop". Worst case if this guess is wrong: pausing
@@ -827,6 +830,9 @@ class NodeOutput @Inject constructor(
         if (!moveServerToCurrentAddress()) return
         val item = currentItem ?: return
         if (takenOver) return // resume() replays anyway, on the new address.
+        // Node unreachable: recovery replays the saved resume point (on the new address).
+        // Replaying here used to overwrite that point with 0 — at the real Node, 2026-10-22.
+        if (outage != null) return
         if (nodeCantReachUs) {
             // Paused only because the Node couldn't reach us — try again from here.
             Timber.i("Network changed — retrying %s on the Node", item.track.title)
