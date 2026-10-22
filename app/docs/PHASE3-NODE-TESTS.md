@@ -233,6 +233,30 @@ Found and fixed at the Node:
 
 ---
 
+## Results — 2026-10-22, A73 at the real Node (0.9.6-beta)
+
+Node "Living Room HI-Fi" at 10.0.0.2, wired to ImanyFiber. The BluOS app's actions were
+sent from the PC with the same HTTP commands (/Pause, /Play, /Stop, /Play?url=radio).
+
+Passed: natural ends (incl. a file whose length the Node misreads: 234 s reported as
+872 s → now ends correctly); **3b-style screen-off run** on the A73 (battery Optimized,
+3 songs, heartbeats every 30 s with no gaps, every end advanced); **4** (the phone hopped
+to ImanyHome by itself → "can't reach this phone" + paused; hopped back → resumed by
+itself); **1e** (Node 140 s vs Spindle 2:19); **2a**; **2b** (SomaFM radio from "the BluOS
+app" → paused, no skip, radio left alone); **2c** (play takes it back); **2e** (stop
+mid-song → paused where it stopped, no skip; play continues); **2f** (pause/resume from
+outside → Spindle follows).
+
+Found and fixed at the Node: stuck at the end of songs whose length the Node misreads
+(the user's "6:00 of 6:15"); a network change during an outage resumed from 0:00; "take it
+back" resumed ~10 s early (last reported secs instead of the real position).
+
+Still open: 2d (physical input), 5b–5d (Node unplugged), 6 (Node IP change), and
+everything on the user's own phones below (A on the S25+/S26+, C, D, E, plus Bluetooth
+auto-switch and the saved queue in 0.9.6).
+
+---
+
 ## Still to do — updated 2026-10-18
 
 Everything that still needs a real phone, in the order to run it. Tick the boxes here

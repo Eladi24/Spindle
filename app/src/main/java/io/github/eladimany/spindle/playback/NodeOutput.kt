@@ -671,6 +671,9 @@ class NodeOutput @Inject constructor(
         if (verdict == NodeOwnership.Verdict.TAKEN_OVER) {
             Timber.i("Node taken over (state=%s service=%s) — stepping back", status.state, status.serviceType)
             takenOver = true
+            // Where playback had got to, not the last secs the Node reported (it only reports
+            // on changes — "take it back" resumed ~10 s early at the real Node).
+            _state.value.elapsedMs()?.let { lastKnownSecs = (it / 1000).toInt() }
             _state.value = PlaybackState.Paused(item, lastKnownSecs * 1000L, (lastKnownTotalSeconds ?: 0) * 1000L)
             return
         }
