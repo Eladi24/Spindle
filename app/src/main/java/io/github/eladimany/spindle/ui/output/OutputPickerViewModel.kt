@@ -28,6 +28,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import javax.inject.Inject
 
@@ -59,6 +60,9 @@ class OutputPickerViewModel @Inject constructor(
     val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
     private var discoveryJob: Job? = null
+
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
     // Re-read on every resume (refreshBatteryState) — the user changes it in the
     // system's App info page, and nothing notifies us when they come back.
@@ -113,12 +117,29 @@ class OutputPickerViewModel @Inject constructor(
         ) == PackageManager.PERMISSION_GRANTED
     }
 
-    /** Call while the picker is visible; [stopDiscovery] when it isn't — no point scanning the network in the background. */
+    /**
+     * One search of [SCAN_MS] when the picker opens — it used to run (and say "Still
+     * scanning…") for as long as the sheet was open. [scanAgain] for another; [stopDiscovery]
+     * when the sheet closes. Players found stay listed after the search ends.
+     */
     fun startDiscovery() {
         if (discoveryJob?.isActive == true) return
+        _players.value = emptyList()
+        _isScanning.value = true
         discoveryJob = viewModelScope.launch {
-            discovery.discover().collect { _players.value = it }
+            try {
+                withTimeoutOrNull(SCAN_MS) { discovery.discover().collect { _players.value = it } }
+            } finally {
+                _isScanning.value = false
+            }
         }
+    }
+
+    /** The ↻ next to "On your network": forget what was found and search again. */
+    fun scanAgain() {
+        discoveryJob?.cancel()
+        discoveryJob = null
+        startDiscovery()
     }
 
     fun stopDiscovery() {
@@ -168,5 +189,10 @@ class OutputPickerViewModel @Inject constructor(
         val trimmed = host.trim()
         if (trimmed.isEmpty()) return
         selectNode(BluOsPlayer(name = trimmed, host = trimmed))
+    }
+
+    private companion object {
+        /** mDNS answers within a second or two; 10 s also catches a player that's just waking. */
+        const val SCAN_MS = 10_000L
     }
 }

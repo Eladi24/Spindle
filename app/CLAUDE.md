@@ -62,6 +62,11 @@ User report on 0.9.5 (S26+, 2026-10-22) and what was done:
      (or a play command that just failed) → switch now and play. Tested with the fake Node:
      auto-switch 30 s after detection (resumed at 0:46 on the phone), play while off-and-paused
      → instant, play 0.4 s after "power off" → playing on the phone in 2 s.
+   - **Play on sheet — scanning (mockup "Spindle Play on sheet — scanning",
+     https://claude.ai/artifact/4DwngZSm4AY8zigFDU8bns, user picked A):** one 10 s search
+     when the sheet opens (`OutputPickerViewModel.SCAN_MS`, `isScanning`), "Searching…" beside
+     ON YOUR NETWORK meanwhile, then ↻ (`scanAgain()`, clears and searches again); none found →
+     "No players found on this WiFi…". Replaces the endless "Still scanning…". Checked on the A73.
    - `PlaybackDiagnostics` (from `App`): screen on/off, Doze, power saving, battery setting
      at Node connect, a heartbeat every 30 s while playing on a Node — a gap = app frozen.
 3. **Bluetooth:** "This phone" pins the speaker, so earbuds connecting later stayed silent.

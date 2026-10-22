@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -21,11 +22,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Smartphone
 import androidx.compose.material.icons.filled.Speaker
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -82,6 +85,7 @@ fun OutputPickerSheet(
 
     val target by viewModel.target.collectAsStateWithLifecycle()
     val players by viewModel.players.collectAsStateWithLifecycle()
+    val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val localRoutes by viewModel.localRoutes.collectAsStateWithLifecycle()
     val preferredRouteId by viewModel.preferredRouteId.collectAsStateWithLifecycle()
@@ -196,11 +200,10 @@ fun OutputPickerSheet(
                     }
                 }
 
-                Text(
-                    "ON YOUR NETWORK",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    letterSpacing = 0.8.sp,
+                NetworkHeader(
+                    isScanning = isScanning,
+                    canScan = hasNearbyWifiPermission,
+                    onScanAgain = viewModel::scanAgain,
                 )
 
                 if (!hasNearbyWifiPermission) {
@@ -229,7 +232,14 @@ fun OutputPickerSheet(
                             onNotNow = viewModel::dismissBatteryCard,
                         )
                     }
-                    ScanningRow()
+                    if (players.isEmpty() && !isScanning) {
+                        Text(
+                            "No players found on this WiFi. Make sure the player is on and on the same network.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 6.dp),
+                        )
+                    }
                 }
 
                 errorMessage?.let {
@@ -326,19 +336,38 @@ private fun OutputCard(
     }
 }
 
+/** "ON YOUR NETWORK", with "Searching…" while a search runs and ↻ to search again after. */
 @Composable
-private fun ScanningRow() {
+private fun NetworkHeader(isScanning: Boolean, canScan: Boolean, onScanAgain: () -> Unit) {
     Row(
-        modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
         Text(
-            "Still scanning…",
-            style = MaterialTheme.typography.bodySmall,
+            "ON YOUR NETWORK",
+            style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            letterSpacing = 0.8.sp,
+            modifier = Modifier.weight(1f),
         )
+        when {
+            !canScan -> Unit
+            isScanning -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(end = 12.dp),
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                Text(
+                    "Searching…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> IconButton(onClick = onScanAgain) {
+                Icon(Icons.Default.Refresh, contentDescription = "Search again", tint = MaterialTheme.colorScheme.primary)
+            }
+        }
     }
 }
 
