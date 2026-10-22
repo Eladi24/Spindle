@@ -252,12 +252,44 @@ Found and fixed at the Node: stuck at the end of songs whose length the Node mis
 back" resumed ~10 s early (last reported secs instead of the real position).
 
 Still open: 2d (physical input), 5b–5d (Node unplugged), 6 (Node IP change), and
-everything on the user's own phones below (A on the S25+/S26+, C, D, E, plus Bluetooth
-auto-switch and the saved queue in 0.9.6).
+everything on the user's own phones below ("New in 0.9.6" N1–N8, and C, D, E).
+
+Later the same evening, with the fake Node: **Node turned off → back to the phone** (30 s
+after it stops answering, or at once on play — even 0.4 s after "power off"). The Play on
+sheet now searches 10 s, then shows ↻ (mockup option A).
 
 ---
 
-## Still to do — updated 2026-10-18
+## New in 0.9.6 — to check on your phone (2026-10-22)
+
+**Build: `Spindle-0.9.6-beta.apk`** (release, installs over 0.9.x and keeps playlists,
+history and settings). Release builds now keep a small **playback log**: if something goes
+wrong, note the time and plug the phone into the PC — Claude pulls
+`/sdcard/Android/data/io.github.eladimany.spindle/files/playback-log.txt`.
+
+- [ ] **N1. Long session at the Node, screen locked** (S26+ / S25+), 30+ min. **Expect:**
+      every song ends and the next starts — including ones that used to freeze ~15 s before
+      the end.
+- [ ] **N2. Node turned off.** Turn the Node off while paused, press play. **Expect:** plays
+      on the phone at once, message "<Node> isn't answering — switched to this phone".
+      While playing: after ~30 s it switches to the phone, paused.
+- [ ] **N3. Phone on the other WiFi.** If the phone joins ImanyHome mid-song: **Expect:**
+      paused + "<Node> can't reach this phone…"; back on ImanyFiber it continues by itself.
+- [ ] **N4. Play on sheet.** Open it: "Searching…" for ~10 s, then ↻. With the Node off:
+      "No players found on this WiFi…". Turn the Node on, tap ↻: it appears.
+- [ ] **N5. Bluetooth.** Playing on the phone, connect earbuds: **Expect:** sound moves to
+      them. Playing on the Node, connect earbuds: switches to the phone, through them.
+      Disconnect: back to the speaker, paused.
+- [ ] **N6. Queue kept.** Shuffle, play a few songs, close the app (swipe it away) or wait
+      a day, reopen. **Expect:** same queue, same song, paused where you left it.
+- [ ] **N7. Gemini playlists** (C5 below). If Google is busy it now retries by itself; a
+      message appears only if it stays overloaded.
+- [ ] **N8. Takeover position.** Play something else on the Node from the BluOS app, then
+      press play in Spindle: **Expect:** back to your song where it was (not ~10 s earlier).
+
+---
+
+## Still to do — updated 2026-10-18 (sections C–E still apply; A/B partly done 2026-10-22)
 
 Everything that still needs a real phone, in the order to run it. Tick the boxes here
 as you go. **Build: `Spindle-0.9.4-beta.apk`** (release). It installs over 0.9.x on the

@@ -94,6 +94,10 @@ Connection: close
 Useful for recognising the Node's requests. It closes the connection after each
 fetch, so do not rely on keep-alive.
 
+Measured 2026-10-22: after `/Play?url=` it sends one `GET` with no `Range` and normally
+reads the **whole file** in it; after `/Play?seek=N` a bounded range from the seek point to
+the end (`bytes=11419581-15105901`, one past the last byte — hence the clamp).
+
 ## End of track
 
 When a track finishes, `/Status` collapses to a minimal document:
@@ -112,6 +116,12 @@ the last known `secs` against `totlen`:
 
 - last `secs` near `totlen` → track ended → advance
 - last `secs` mid-track → user stopped → do not advance
+
+⚠️ **`totlen` can be wrong** (measured 2026-10-22): for a 64 kb/s MP3 of 234 s the Node
+reported `<totlen>872</totlen>` (`streamFormat` "MP3 64 kb/s"), and still stopped at 234 s.
+Judging the end against `totlen` alone read every such song's end as a user stop. Take the
+shorter of `totlen` and the file's own duration. Also evidence of a real end: the Node had
+fetched the file's last byte (it usually reads a whole track in one `GET` — see below).
 
 ## Long-polling — required
 
@@ -150,6 +160,13 @@ for a shorter silence. Untested.
   then shows `<serviceType>AudioInputs</serviceType>`, `<title1>Bluetooth</title1>`,
   `<quality>APTX</quality>`. The HTTP stream dies. The app should detect
   `serviceType == "AudioInputs"` and surface it rather than fighting it.
+- **The Node can't reach the URL** (measured 2026-10-22: the phone on a second
+  router's WiFi behind the Node's network, so the Node can't open connections to it):
+  `state` is `connecting` for ~10 s, then `stop`. Commands from the phone still work
+  (NAT only blocks the other direction). Detect it by the Node never fetching the file.
+- **Another source started** (e.g. `/Play?url=` with a radio stream from the BluOS
+  app): `streamUrl` changes to the new URL, `state` `connecting` → `stream`.
+- **The Node switched off**: commands fail with `NoRouteToHost`; nothing is reported.
 - **Pressing skip** on the Node or in the BluOS app during a URL stream appears
   to **restart the stream** (a second `GET` for the same file). `secs` resets to
   0 without a state change — do not treat that as a new track.
@@ -194,4 +211,6 @@ with our Service." Consider contacting Lenbrook before a public release.
 - 24-bit/96kHz `<quality>` reporting (no hi-res file available at test time).
   Expect `hd` rather than a bitrate number.
 - Whether `/Play?url=` handles very large files or slow networks gracefully.
-- Behaviour when the serving device's IP changes mid-stream.
+- ~~Behaviour when the serving device's IP changes mid-stream~~ — measured 2026-10-22:
+  the stream dies; a new `/Play?url=` at the new address is needed (and works when the
+  Node can reach it).

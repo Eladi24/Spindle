@@ -89,10 +89,11 @@ Earlier (0.9.5): Gemini key any prefix ("AQ." keys); search plays the whole libr
 the tapped track; MusicBrainz 503 backoff. Noticed, not fixed: "Smoke on the Water" matched
 "Rapture of the Deep", 1974 (`MusicBrainzApi.bestMatch`'s earliest-album pick).
 
-**Waiting on the Node** (`docs/PHASE3-NODE-TESTS.md`, "Still to do" at the end): 3b
-(whole album, screen off, S25+ — now also the SessionPlayer test), the WiFi-drop/IP-change
-recovery (section 4 — its code path changed on 2026-09-25 and was never re-run), 1e,
-2a/2c–2f, 5b–5d, 6.
+**Waiting on the Node** (`docs/PHASE3-NODE-TESTS.md`): passed at the real Node on
+2026-10-22 — 1e, 2a–2c, 2e, 2f, 4 (network change), a screen-off run (A73). Still open: 2d
+(physical input), 5b–5d (Node unplugged mid-song — the new fall-back-to-phone covers part of
+it), 6 (Node IP change), and the long screen-off session on the user's own phone (section
+"New in 0.9.6").
 
 **Offered, not started:** folder/playlist search on those tabs; title-only track search;
 R8 shrinking for release builds; landscape Now Playing; "Make a playlist like this";

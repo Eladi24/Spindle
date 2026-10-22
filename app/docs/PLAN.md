@@ -5,10 +5,10 @@ end-to-end on-device; see `PHASE1.md` for the two items left postponed —
 accessibility pass, S25+ full-library run). Phase 2 is functionally built:
 `MediaHttpServer`, `TokenRegistry`, `BluOsClient`, `BluOsDiscovery`,
 `NodeOutput`, `AudioOutputSwitcher`, and the `OutputPickerSheet` UI are all
-in place and wired together. **None of it has been exercised against a
-real Node yet** — that's the next step, and several deliberately-deferred
-or best-guess pieces (noted throughout CLAUDE.md's Phase 2 sections) get
-confirmed or fixed there.
+in place and wired together. *(Update 2026-10-22: Phase 2 has been tested at
+the real Node since 2026-09-22; Phase 3 robustness is built and mostly verified
+there — current state in `CLAUDE.md`'s "Next session" and `PHASE3-NODE-TESTS.md`.
+The app is at 0.9.6-beta.)*
 Protocol detail: `bluos-api.md`. Design/decision log: `CLAUDE.md`'s dated
 Phase 2 entries.
 **Target device:** Galaxy S25+ (primary), Galaxy A73 (secondary test device)

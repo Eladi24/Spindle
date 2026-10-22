@@ -20,7 +20,7 @@ Spindle treats the phone as a **library and remote control**, and the streamer a
 
 When you pick your streamer as the output, Spindle runs a small web server on your phone and hands the streamer a private link to the original file. The streamer fetches the file and decodes it itself, so nothing is re-encoded, down-sampled or squeezed through Bluetooth. Spindle keeps the queue, the controls and the volume in sync from your phone.
 
-It's built to survive real homes: it reconnects when the WiFi drops, follows your phone to a new IP address, tells you when your phone has wandered onto a WiFi the streamer can't reach (and carries on by itself when it's back), and steps back politely when someone else starts playing something on the streamer.
+It's built to survive real homes: it reconnects when the WiFi drops, follows your phone to a new IP address, tells you when your phone has wandered onto a WiFi the streamer can't reach (and carries on by itself when it's back), moves the music back to your phone if the streamer is switched off, and steps back politely when someone else starts playing something on the streamer.
 
 ## What's new here ✨
 
