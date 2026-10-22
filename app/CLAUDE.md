@@ -1710,11 +1710,13 @@ Android offers it (v2 or v3, incl. Downloadable/Downloading — user confirmed v
   Key check = `GET /v1beta/models?pageSize=1` (free, fails on a bad key). Requests
   `POST /v1beta/models/{m}:generateContent` with `CriteriaPrompt`'s system + user text,
   temperature 0.2, `responseMimeType: application/json`, 1024 max tokens. Models tried in
-  order, next only on 404: `gemini-flash-lite-latest`, `gemini-3.1-flash-lite`,
-  `gemini-2.5-flash-lite` — Flash-Lite is on the free plan. **No retries**: 429 → "free
-  limit used up, try later — nothing is charged".
-- **`GeminiApi`** (pure, `GeminiApiTest` 6 cases incl. the router rule): key pattern
-  (`AIza` + 30–60 of `[A-Za-z0-9_-]`), mask, request body, reply text (skips `thought`
+  order, next on 404: `gemini-flash-lite-latest`, `gemini-3.1-flash-lite`,
+  `gemini-2.5-flash-lite` — Flash-Lite is on the free plan. 429 → "free limit used up, try
+  later — nothing is charged", never retried. 503/500/502/504 ("model overloaded",
+  `Error.Busy`, since 2026-10-22) → retry after 2 s and 5 s, then the other models.
+- **`GeminiApi`** (pure, `GeminiApiTest` incl. the router rule): key pattern — any
+  key-shaped run, 30–200 of `[A-Za-z0-9._~+=-]`, longest wins (AI Studio gives both "AIza…"
+  and "AQ.…" keys, 2026-10-20) — mask, request body, reply text (skips `thought`
   parts), error classes (bad key = 400 with `API_KEY_INVALID` — checked against the live
   API with a fake key — or 401/403; 429; 404).
 - **`GeminiKeyStore`**: DataStore `ai_key`, value AES-GCM-encrypted with an Android Keystore
@@ -1776,7 +1778,8 @@ Tracks + Manage folders entry; hand edit for any track; library-wide year/genre 
   here needs a Migration. Verified on the A73: "Library mix" survived the upgrade.
 - **MusicBrainz** (`MusicBrainzApi` pure + `MusicBrainzClient`): recording search
   `recording:"T" AND artist:"A"`, limit 100, UA `Spindle/<version> ( github url )`, paced
-  1.1 s, 503 → wait 3 s, retry once. **Measured on the live service:** the top hit for
+  1.1 s; 503 → back off 2/4/8/12/20 s; a track that still fails is skipped, 3 in a row
+  stop the run (2026-10-20 — MusicBrainz sheds ~1 in 5 requests when busy). **Measured on the live service:** the top hit for
   "Highway Star" was a 2024 remix and the 1972 original wasn't in the top 15; `NOT
   secondarytype:compilation` drops the original too (multi-valued field). So: year =
   earliest first-release-date across all recordings with that title (notes in brackets
