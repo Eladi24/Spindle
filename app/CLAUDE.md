@@ -10,31 +10,58 @@ Do not write a playback engine for that path.
 Protocol facts were measured against real hardware — see `docs/bluos-api.md`.
 Trust that file over any assumption about BluOS.
 
-## ▶ Next session — start here (updated 2026-10-20)
+## ▶ Next session — start here (updated 2026-10-22)
 
-**State:** Release **0.9.5-beta (versionCode 6)** built as `Spindle-0.9.5-beta.apk`
-(not yet handed out). The user tested 0.9.4 and reported three bugs, fixed 2026-10-20:
+**State:** Release **0.9.6-beta (versionCode 7)** built as `Spindle-0.9.6-beta.apk`, for
+the user's S26+. Ask how it went at the Node; if anything is still off, **plug the phone
+in and pull the playback log** (works on release builds, no root):
+`adb pull /sdcard/Android/data/io.github.eladimany.spindle/files/playback-log.txt`
+(`PlaybackLogTree`: Node/server/playback tags only, 2 × 512 KB rotated).
 
-1. **Gemini key prefix** — AI Studio now also hands out keys starting "AQ." (not
-   "AIza"). `GeminiApi.findKey` accepts any key-shaped run (30–200 of
-   `[A-Za-z0-9._~+=-]`, longest wins); Google's check decides if it works.
-2. **Search queue** — tapping a track in Search played only the matches. Now it plays
-   the whole library from that track, in the Tracks tab's sort (passed as the `sort`
-   route arg). Verified on the A73 ("Track 4 of 10").
-3. **Fix track info lookups stopped after ~2** — MusicBrainz sheds ~1 in 5 requests
-   with 503 when busy (`X-RateLimit-Who: global` / `search-shed`), sometimes twice in a
-   row; the client retried once and then the whole run died. Now: 503 backoff
-   2/4/8/12/20 s, a track that still fails is skipped (note + "Look up" again retries
-   only unanswered rows), and only 3 failures in a row stop the run. Verified with 12
-   live lookups from the JVM (several needed retries, all succeeded); the A73's library
-   has nothing to fix, so not run in the UI on a phone.
+User report on 0.9.5 (S26+, 2026-10-22) and what was done:
+1. MusicBrainz lookups — confirmed fixed.
+2. **Node: stuck ~15 s before the end (6:00 of 6:15, nothing playing); music stops when
+   the phone changes WiFi, then play doesn't respond.** Findings at the user's home: two
+   WiFis on different subnets — ImanyFiber 10.0.0.x (the Node's) and ImanyHome
+   192.168.31.x, a second router *behind* ImanyFiber (it is 10.0.0.1 there). Phones hop
+   between them on their own (weak signal both). On ImanyHome the phone can command the
+   Node (NAT outbound) but **the Node can't reach the phone's server** — no app can fix
+   that. Disproved on the way: Ktor CIO closing a stalled stream (150 s stall served the
+   whole file). Built:
+   - **Fetch watchdog:** no GET from the Node 12 s after `/Play` → `/Stop`, Paused at the
+     resume point, Toast "<Node> can't reach this phone…", and the **next network change
+     retries by itself** (`nodeCantReachUs`). Buffering on a network change now replays at
+     the held seek, not 0.
+   - **End detection:** `NodeTrackEnd.isNaturalEnd(…, servedToEnd, fileDurationSeconds)` —
+     the shorter of the Node's totlen and the file's length; within 45 s of it counts as the
+     end when the phone already served the file's last byte (`TokenRegistry.markServedToEnd`).
+   - **End check:** Playing and 8 s past the end with no status → one plain `/Status`.
+   - Tested on the A73 with a **streaming fake Node** (scratch `fakenode2.py`: fetches at the
+     track's byte rate with a 20 s buffer, stops when starved; PC on ImanyFiber like the
+     Node; BluOS port over `adb reverse tcp:11000`, manual IP 127.0.0.1): natural end
+     advances; the phone hopping to ImanyHome (it did so by itself) → watchdog + Toast;
+     back on ImanyFiber → resumed at the right place within a second. **Not run on the
+     real Node** — it wasn't reachable that day (no ping/mDNS on ImanyFiber).
+   - Advice for the user: forget ImanyHome on the phone, or put the Node on the same network.
+3. **Bluetooth:** "This phone" pins the speaker, so earbuds connecting later stayed silent.
+   `BluetoothAutoSwitch` (started from `App`): a newly connected A2DP device becomes the pinned
+   route; on a Node it switches to the phone; when the pinned one disconnects, back to the
+   speaker. Not tested with real earbuds. Also: switching outputs while **paused stays
+   paused** (`AudioOutput.prepare`). **Picker listing paired-but-disconnected Bluetooth
+   devices: not built — needs a mockup** (apps can't connect A2DP themselves; it would open
+   Bluetooth settings).
+4. **Gemini 503** = "model overloaded" on Google's side (free plan, busy hours).
+   `GeminiApi.Error.Busy` (500/502/503/504, UNAVAILABLE, DEADLINE_EXCEEDED): retry after 2 s
+   and 5 s, then the other Flash-Lite models, then "Gemini is overloaded right now".
+5. **Queue survives app restarts:** `QueueStore` (filesDir/queue.json, AtomicFile, track ids
+   → looked up again, missing tracks dropped) saved on every queue change, pause, track
+   change and every 15 s while playing; restored at startup paused where it was
+   (`AudioOutput.prepare`, `QueueManager.snapshot/load`, `SavedQueueTest`). Verified on the
+   A73: force-stop → reopen → same track, track 4 of 26, 3:06; play continues.
 
-Noticed, not fixed: "Smoke on the Water" matched album "Rapture of the Deep", year 1974
-(should be Machine Head, 1972) — the earliest-official-album pick in
-`MusicBrainzApi.bestMatch` can be fooled.
-
-Still open from the 0.9.4 real-phone list in `docs/PHASE3-NODE-TESTS.md` ("Still to do —
-updated 2026-10-18"): ask which of A–E the user ran.
+Earlier (0.9.5): Gemini key any prefix ("AQ." keys); search plays the whole library from
+the tapped track; MusicBrainz 503 backoff. Noticed, not fixed: "Smoke on the Water" matched
+"Rapture of the Deep", 1974 (`MusicBrainzApi.bestMatch`'s earliest-album pick).
 
 **Waiting on the Node** (`docs/PHASE3-NODE-TESTS.md`, "Still to do" at the end): 3b
 (whole album, screen off, S25+ — now also the SessionPlayer test), the WiFi-drop/IP-change

@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
 import android.os.SystemClock
+import android.widget.Toast
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.BluOsPlayer
 import io.github.eladimany.spindle.core.model.OutputCapabilities
@@ -60,6 +61,10 @@ private const val SEEK_LANDING_SLACK_SECONDS = 5
 private const val PENDING_SEEK_TIMEOUT_MS = 6_000L
 /** A mid-track "stop" this recent is assumed to be the IP change killing the stream, not a user. */
 private const val IP_CHANGE_STOP_WINDOW_MS = 15_000L
+/** After /Play, the Node has this long to start reading the file before it counts as unable to reach us. */
+private const val FIRST_FETCH_TIMEOUT_MS = 12_000L
+/** Past the track's end by this much with no news from the Node: ask it directly. */
+private const val END_CHECK_SLACK_MS = 8_000L
 
 /**
  * [AudioOutput] backed by a BluOS Node: serves the current track over
@@ -134,6 +139,12 @@ class NodeOutput @Inject constructor(
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var reloadOnResume = false
     private var stoppedMidTrackAtMs: Long? = null
+    // The Node never read the file after /Play — the phone is on a network the Node can't
+    // reach (e.g. a second router's WiFi behind the Node's; user's home, 2026-10-22).
+    // Shown as Paused; the next network change retries by itself.
+    private var nodeCantReachUs = false
+    private var fetchWatchdogJob: Job? = null
+    private var endCheckJob: Job? = null
     // One network change fires several callbacks, and the rebind suspends —
     // without this, two of them could both see the old address and both restart.
     private val serverMutex = Mutex()
@@ -222,6 +233,9 @@ class NodeOutput @Inject constructor(
         resetSeekSync()
         reloadOnResume = false
         stoppedMidTrackAtMs = null
+        nodeCantReachUs = false
+        fetchWatchdogJob?.cancel()
+        endCheckJob?.cancel()
         _state.value = PlaybackState.Idle
     }
 
@@ -234,6 +248,19 @@ class NodeOutput @Inject constructor(
 
     override suspend fun play(item: QueueItem) {
         playInternal(item)
+    }
+
+    /** Shows [item] paused; resume() then plays it from [positionMs] (replayAt). */
+    override suspend fun prepare(item: QueueItem, positionMs: Long) {
+        if (player == null) return
+        currentItem = item
+        currentToken = null
+        takenOver = false
+        resetSeekSync()
+        lastKnownSecs = (positionMs / 1000).toInt()
+        lastKnownTotalSeconds = (item.track.durationMs / 1000).toInt()
+        reloadOnResume = true
+        _state.value = PlaybackState.Paused(item, lastKnownSecs * 1000L, item.track.durationMs)
     }
 
     /** Returns false if the Node couldn't be reached (already handed to outage handling). */
@@ -257,6 +284,9 @@ class NodeOutput @Inject constructor(
         resetSeekSync()
         reloadOnResume = false
         stoppedMidTrackAtMs = null
+        nodeCantReachUs = false
+        fetchWatchdogJob?.cancel()
+        endCheckJob?.cancel()
         if (outage != null) {
             // Node known unreachable — don't wait out a timeout; resume here on recovery.
             outage = Outage(item, resumeSeconds)
@@ -265,7 +295,56 @@ class NodeOutput @Inject constructor(
         val url = address.urlFor(token)
         if (!nodeCommand("play", Outage(item, resumeSeconds)) { bluOsClient.playUrl(it, url) }) return false
         ensureStatusLoop()
+        startFetchWatchdog(item, token, resumeSeconds)
         return true
+    }
+
+    /**
+     * The Node reads the file within a second or two of /Play. If it hasn't after
+     * [FIRST_FETCH_TIMEOUT_MS], it can't reach this phone's server: stop waiting
+     * (the real Node sits in "connecting"), show Paused there, and say why.
+     */
+    private fun startFetchWatchdog(item: QueueItem, token: String, resumeSeconds: Int) {
+        fetchWatchdogJob = scope.launch {
+            delay(FIRST_FETCH_TIMEOUT_MS)
+            if (currentToken != token || takenOver || outage != null || tokenRegistry.wasFetched(token)) return@launch
+            Timber.w("Node never fetched %s from %s — it can't reach this phone", item.track.title, serverAddress?.host)
+            nodeCommand("stop") { bluOsClient.stop(it) }
+            currentToken = null // Its statuses from here on are about a stream that never started.
+            nodeCantReachUs = true
+            reloadOnResume = true
+            lastKnownSecs = resumeSeconds
+            _state.value = PlaybackState.Paused(item, resumeSeconds * 1000L, item.track.durationMs)
+            Toast.makeText(
+                context,
+                "${player?.name ?: "The player"} can't reach this phone. Is the phone on the same WiFi?",
+                Toast.LENGTH_LONG,
+            ).show()
+        }
+    }
+
+    /**
+     * While Playing, the next status is only due at the track's end. If it doesn't come
+     * (a long-poll silently lost on a network change), ask the Node once, a few seconds
+     * past the end, rather than sit on a finished track.
+     */
+    private fun scheduleEndCheck(item: QueueItem, secs: Int, totalSeconds: Int?) {
+        endCheckJob?.cancel()
+        val total = totalSeconds?.takeIf { it > 0 } ?: return
+        endCheckJob = scope.launch {
+            delay((total - secs).coerceAtLeast(0) * 1000L + END_CHECK_SLACK_MS)
+            if (currentItem != item || _state.value !is PlaybackState.Playing) return@launch
+            val target = player ?: return@launch
+            val status = try {
+                bluOsClient.status(target)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@launch // The poll loops notice an unreachable Node.
+            }
+            Timber.i("Past the end of %s with no status — Node says %s at %ds", item.track.title, status.state, status.secs)
+            applyStatus(status)
+        }
     }
 
     override suspend fun pause() {
@@ -299,6 +378,8 @@ class NodeOutput @Inject constructor(
         if (outage != null) outage = Outage(null, 0) // Stopped: nothing to resume on recovery.
         takenOver = false
         currentItem = null
+        fetchWatchdogJob?.cancel()
+        endCheckJob?.cancel()
         _state.value = PlaybackState.Idle
     }
 
@@ -631,6 +712,7 @@ class NodeOutput @Inject constructor(
                 }
                 lastKnownSecs = status.secs
                 _state.value = PlaybackState.Playing(item, status.secs * 1000L, durationMs)
+                scheduleEndCheck(item, status.secs, status.totalSeconds)
             }
             // Unverified against real hardware — Phase 0 only ever observed
             // "stream"/"stop". Worst case if this guess is wrong: pausing
@@ -651,10 +733,18 @@ class NodeOutput @Inject constructor(
                 // reports on changes, so after a seek near the end its last secs can be
                 // several seconds short and a natural end read as a stop (found at the Node).
                 val positionSecs = ((_state.value.elapsedMs() ?: (lastKnownSecs * 1000L)) / 1000L).toInt()
-                val naturalEnd = seenOurs && NodeTrackEnd.isNaturalEnd(positionSecs, lastKnownTotalSeconds)
+                val servedToEnd = tokenRegistry.wasServedToEnd(token)
+                val naturalEnd = seenOurs && NodeTrackEnd.isNaturalEnd(
+                    positionSecs,
+                    lastKnownTotalSeconds,
+                    servedToEnd,
+                    fileDurationSeconds = (item.track.durationMs / 1000).toInt(),
+                )
+                endCheckJob?.cancel()
                 Timber.d(
-                    "Node stopped at ~%ds of %ss (last reported %ds) -> %s",
-                    positionSecs, lastKnownTotalSeconds, lastKnownSecs, if (naturalEnd) "track ended" else "stopped mid-track",
+                    "Node stopped at ~%ds of %ss (file %ds, last reported %ds, served to end %s) -> %s",
+                    positionSecs, lastKnownTotalSeconds, item.track.durationMs / 1000, lastKnownSecs, servedToEnd,
+                    if (naturalEnd) "track ended" else "stopped mid-track",
                 )
                 _state.value = if (naturalEnd) {
                     PlaybackState.Ended(item)
@@ -737,9 +827,16 @@ class NodeOutput @Inject constructor(
         if (!moveServerToCurrentAddress()) return
         val item = currentItem ?: return
         if (takenOver) return // resume() replays anyway, on the new address.
+        if (nodeCantReachUs) {
+            // Paused only because the Node couldn't reach us — try again from here.
+            Timber.i("Network changed — retrying %s on the Node", item.track.title)
+            replayAt(item, lastKnownSecs)
+            return
+        }
         when (val state = _state.value) {
             is PlaybackState.Playing -> replayAt(item, (interpolatedPositionMs(state) / 1000).toInt())
-            is PlaybackState.Buffering -> replayAt(item, 0)
+            // A held seek is where this item is meant to start.
+            is PlaybackState.Buffering -> replayAt(item, pendingSeekSeconds ?: 0)
             is PlaybackState.Paused -> {
                 // A mid-track stop just before the address changed is our stream dying,
                 // not a user's stop: carry on by ourselves, as if nothing happened.

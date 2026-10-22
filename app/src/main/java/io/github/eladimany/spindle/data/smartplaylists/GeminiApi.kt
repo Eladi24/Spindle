@@ -88,8 +88,13 @@ object GeminiApi {
         /** This model name isn't served (retired) — try the next in [MODELS]. */
         data object ModelGone : Error
 
+        /** 503 "model is overloaded" (or another temporary server error) — worth retrying. */
+        data object Busy : Error
+
         data class Other(val httpStatus: Int, val message: String?) : Error
     }
+
+    private val BUSY_STATUSES = setOf(500, 502, 503, 504)
 
     fun error(httpStatus: Int, body: String): Error {
         val error = try {
@@ -102,6 +107,7 @@ object GeminiApi {
         return when {
             httpStatus == 429 || status == "RESOURCE_EXHAUSTED" -> Error.QuotaUsedUp
             httpStatus == 404 || status == "NOT_FOUND" -> Error.ModelGone
+            httpStatus in BUSY_STATUSES || status == "UNAVAILABLE" || status == "DEADLINE_EXCEEDED" -> Error.Busy
             httpStatus == 401 || httpStatus == 403 || status == "PERMISSION_DENIED" || status == "UNAUTHENTICATED" -> Error.BadKey
             // A bad key comes back as 400 INVALID_ARGUMENT with reason API_KEY_INVALID.
             httpStatus == 400 && body.contains("API_KEY_INVALID") -> Error.BadKey

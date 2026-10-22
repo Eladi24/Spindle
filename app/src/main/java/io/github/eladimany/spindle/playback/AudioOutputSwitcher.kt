@@ -61,6 +61,7 @@ class AudioOutputSwitcher @Inject constructor(
     override val capabilities: OutputCapabilities get() = active.capabilities
 
     override suspend fun play(item: QueueItem) = active.play(item)
+    override suspend fun prepare(item: QueueItem, positionMs: Long) = active.prepare(item, positionMs)
     override suspend fun pause() = active.pause()
     override suspend fun resume() = active.resume()
     override suspend fun stop() = active.stop()
@@ -79,6 +80,7 @@ class AudioOutputSwitcher @Inject constructor(
         val previousTarget = _target.value
         if (newTarget == previousTarget) return
 
+        val wasPaused = state.value is PlaybackState.Paused
         val (resumeItem, resumePositionMs) = when (val current = state.value) {
             // Playing.positionMs is a snapshot as of capturedAtMs, not a live
             // value (see PlaybackState's own doc) — neither output updates it
@@ -105,7 +107,10 @@ class AudioOutputSwitcher @Inject constructor(
         }
         _target.value = newTarget
 
-        if (resumeItem != null) {
+        if (resumeItem != null && wasPaused) {
+            // Paused stays paused on the new output (it used to start playing there).
+            active.prepare(resumeItem, resumePositionMs)
+        } else if (resumeItem != null) {
             active.play(resumeItem)
             val resumeSeconds = (resumePositionMs / 1000).toInt()
             if (resumeSeconds > 1) active.seek(resumeSeconds)

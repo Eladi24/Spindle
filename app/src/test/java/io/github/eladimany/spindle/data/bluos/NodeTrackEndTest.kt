@@ -36,4 +36,20 @@ class NodeTrackEndTest {
         assertTrue(NodeTrackEnd.isNaturalEnd(lastKnownSecs = 250, lastKnownTotalSeconds = 268, toleranceSeconds = 20))
         assertFalse(NodeTrackEnd.isNaturalEnd(lastKnownSecs = 250, lastKnownTotalSeconds = 268, toleranceSeconds = 2))
     }
+
+    @Test
+    fun `stuck 15 s before the end counts as the end once the whole file was served`() {
+        // User report: frozen at 6:00 of 6:15 with nothing playing.
+        assertTrue(NodeTrackEnd.isNaturalEnd(360, 375, servedToEnd = true))
+        assertFalse(NodeTrackEnd.isNaturalEnd(360, 375, servedToEnd = false))
+        // Mid-track stays a stop even with the whole file served (the Node buffers ahead).
+        assertFalse(NodeTrackEnd.isNaturalEnd(120, 375, servedToEnd = true))
+    }
+
+    @Test
+    fun `the shorter of the Node's and the file's length is the end`() {
+        assertTrue(NodeTrackEnd.isNaturalEnd(359, 375, servedToEnd = false, fileDurationSeconds = 360))
+        assertTrue(NodeTrackEnd.isNaturalEnd(359, null, servedToEnd = false, fileDurationSeconds = 360))
+        assertFalse(NodeTrackEnd.isNaturalEnd(359, null, servedToEnd = false, fileDurationSeconds = 0))
+    }
 }

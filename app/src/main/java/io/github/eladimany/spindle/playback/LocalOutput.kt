@@ -129,7 +129,20 @@ class LocalOutput @Inject constructor(
 
     override suspend fun play(item: QueueItem) {
         currentItem = item
-        val mediaItem = MediaItem.Builder()
+        player.setMediaItem(mediaItemFor(item))
+        player.prepare()
+        player.play()
+    }
+
+    override suspend fun prepare(item: QueueItem, positionMs: Long) {
+        currentItem = item
+        player.setMediaItem(mediaItemFor(item), positionMs)
+        player.playWhenReady = false
+        player.prepare()
+    }
+
+    private fun mediaItemFor(item: QueueItem): MediaItem =
+        MediaItem.Builder()
             .setUri(item.track.uri)
             .setMediaMetadata(
                 MediaMetadata.Builder()
@@ -139,10 +152,6 @@ class LocalOutput @Inject constructor(
                     .build(),
             )
             .build()
-        player.setMediaItem(mediaItem)
-        player.prepare()
-        player.play()
-    }
 
     override suspend fun pause() {
         player.pause()

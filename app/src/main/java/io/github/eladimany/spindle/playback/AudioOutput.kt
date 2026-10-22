@@ -19,6 +19,9 @@ interface AudioOutput {
     val volume: StateFlow<Int>
 
     suspend fun play(item: QueueItem)
+
+    /** Loads [item] paused at [positionMs] without making a sound — a queue restored at app start. */
+    suspend fun prepare(item: QueueItem, positionMs: Long)
     suspend fun pause()
     suspend fun resume()
     suspend fun stop()

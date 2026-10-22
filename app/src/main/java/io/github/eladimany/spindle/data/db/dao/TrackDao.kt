@@ -57,6 +57,10 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun getById(id: Long): TrackEntity?
 
+    /** At most 999 ids per call (SQLite's parameter limit before Android 11). */
+    @Query("SELECT * FROM tracks WHERE id IN (:ids)")
+    suspend fun getByIds(ids: List<Long>): List<TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE uri = :uri LIMIT 1")
     suspend fun getByUri(uri: String): TrackEntity?
 

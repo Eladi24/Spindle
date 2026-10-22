@@ -7,13 +7,16 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.QueueItem
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.core.model.elapsedMs
 import io.github.eladimany.spindle.core.model.previousRestartsTrack
 import io.github.eladimany.spindle.data.history.PlayEndReason
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +46,7 @@ class PlaybackController @Inject constructor(
     private val output: AudioOutput,
     private val history: PlayHistoryRecorder,
     private val smartShuffler: SmartShuffler,
+    private val queueStore: QueueStore,
     @ApplicationContext private val context: Context,
 ) {
     private val queueManager = QueueManager()
@@ -50,6 +54,11 @@ class PlaybackController @Inject constructor(
     private var serviceStarted = false
     private var nextQueueItemSeq = 0L
     private var finished = false
+    // Saving starts only once the saved queue has been read back — an empty queue at
+    // startup must not overwrite it first.
+    private var restoreDone = false
+    private var saveJob: Job? = null
+    private var playingSaveJob: Job? = null
 
     val playbackState: StateFlow<PlaybackState> = output.state
 
@@ -83,7 +92,55 @@ class PlaybackController @Inject constructor(
             output.state.collect { state ->
                 history.onState(state)
                 if (state is PlaybackState.Ended) advance()
+                onStateForSaving(state)
             }
+        }
+        scope.launch { restoreSavedQueue() }
+    }
+
+    /** The queue from the last run, paused where it was — unless something already started playing. */
+    private suspend fun restoreSavedQueue() {
+        val restored = queueStore.load()
+        if (restored != null && queueManager.size == 0) {
+            val (snapshot, saved) = restored
+            queueManager.load(snapshot)
+            finished = saved.finished
+            refreshQueueState()
+            val item = queueManager.currentItem
+            if (item != null && !finished) {
+                history.onItemStarted(item)
+                output.prepare(item, saved.positionMs)
+            }
+        }
+        restoreDone = true
+    }
+
+    private fun onStateForSaving(state: PlaybackState) {
+        // Paused / ended / a new track: save now. While playing, every 15 s too, so a
+        // killed process comes back near where it was.
+        scheduleSave()
+        playingSaveJob?.cancel()
+        if (state is PlaybackState.Playing) {
+            playingSaveJob = scope.launch {
+                while (true) {
+                    delay(PLAYING_SAVE_INTERVAL_MS)
+                    scheduleSave()
+                }
+            }
+        }
+    }
+
+    private fun scheduleSave() {
+        if (!restoreDone) return
+        saveJob?.cancel()
+        saveJob = scope.launch {
+            delay(SAVE_DEBOUNCE_MS)
+            val state = playbackState.value
+            val positionMs = when (state) {
+                is PlaybackState.Playing, is PlaybackState.Paused -> state.elapsedMs() ?: 0L
+                else -> 0L
+            }
+            queueStore.save(SavedQueue.from(queueManager.snapshot(), finished, positionMs))
         }
     }
 
@@ -132,7 +189,11 @@ class PlaybackController @Inject constructor(
     fun togglePlayPause() {
         when (playbackState.value) {
             is PlaybackState.Playing -> scope.launch { output.pause() }
-            is PlaybackState.Paused -> scope.launch { output.resume() }
+            is PlaybackState.Paused -> {
+                // A queue restored at startup is paused without the service running.
+                ensureServiceStarted()
+                scope.launch { output.resume() }
+            }
             else -> if (finished) replay() else queueManager.currentItem?.let { playItem(it) }
         }
     }
@@ -252,6 +313,7 @@ class PlaybackController @Inject constructor(
     }
 
     private fun refreshQueueState() {
+        scheduleSave()
         _queueState.value = QueueState(
             items = queueManager.queue,
             currentIndex = queueManager.currentIndex,
@@ -259,6 +321,11 @@ class PlaybackController @Inject constructor(
             shuffleMode = queueManager.shuffleMode,
             finished = finished,
         )
+    }
+
+    private companion object {
+        const val SAVE_DEBOUNCE_MS = 500L
+        const val PLAYING_SAVE_INTERVAL_MS = 15_000L
     }
 
     private fun ensureServiceStarted() {

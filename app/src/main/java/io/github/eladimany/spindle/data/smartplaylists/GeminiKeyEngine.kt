@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -104,8 +105,12 @@ class GeminiKeyEngine @Inject constructor(private val keyStore: GeminiKeyStore) 
             ?: return InterpretResult.Failure("Add a free Gemini key in AI settings first.")
         val body = GeminiApi.requestBody(CriteriaPrompt.systemInstruction, CriteriaPrompt.userText(request, facets))
         return try {
+            // Google answers 503 when a model is overloaded — common on the free plan at
+            // busy times. Wait and retry, then try the other free models before giving up.
+            var busyRetries = 0
+            var busyModels = 0
             while (modelIndex < GeminiApi.MODELS.size) {
-                val model = GeminiApi.MODELS[modelIndex]
+                val model = GeminiApi.MODELS[(modelIndex + busyModels) % GeminiApi.MODELS.size]
                 val response = httpClient.post(GeminiApi.generateUrl(model)) {
                     header(KEY_HEADER, key)
                     setBody(TextContent(body, ContentType.Application.Json))
@@ -124,7 +129,16 @@ class GeminiKeyEngine @Inject constructor(private val keyStore: GeminiKeyStore) 
                 val error = GeminiApi.error(code, text)
                 Timber.w("Gemini (%s) failed: %s", model, error)
                 when (error) {
-                    GeminiApi.Error.ModelGone -> modelIndex++
+                    GeminiApi.Error.ModelGone -> if (busyModels == 0) modelIndex++ else busyModels++
+                    GeminiApi.Error.Busy -> {
+                        if (busyRetries < BUSY_WAITS_MS.size) {
+                            delay(BUSY_WAITS_MS[busyRetries++])
+                        } else if (++busyModels >= GeminiApi.MODELS.size - modelIndex) {
+                            return InterpretResult.Failure("Gemini is overloaded right now (on Google's side). Try again in a minute.")
+                        } else {
+                            busyRetries = 0
+                        }
+                    }
                     GeminiApi.Error.BadKey ->
                         return InterpretResult.Failure("Your Gemini key stopped working. Check it in AI settings.")
                     GeminiApi.Error.QuotaUsedUp ->
@@ -146,5 +160,8 @@ class GeminiKeyEngine @Inject constructor(private val keyStore: GeminiKeyStore) 
     private companion object {
         /** In a header rather than the URL, so it stays out of any logged URLs. */
         const val KEY_HEADER = "x-goog-api-key"
+
+        /** Waits before retrying an overloaded model; after these, the next model is tried. */
+        val BUSY_WAITS_MS = longArrayOf(2_000L, 5_000L)
     }
 }

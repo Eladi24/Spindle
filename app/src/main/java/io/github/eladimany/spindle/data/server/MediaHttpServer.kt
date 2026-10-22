@@ -72,13 +72,14 @@ class MediaHttpServer @Inject constructor(
                     call.respond(HttpStatusCode.NotFound)
                 } else {
                     call.response.header("icy-name", served.icyName)
-                    serveFile(Uri.parse(served.uri), call)
+                    tokenRegistry.markFetched(token)
+                    serveFile(Uri.parse(served.uri), call) { tokenRegistry.markServedToEnd(token) }
                 }
             }
         }
     }
 
-    private suspend fun serveFile(uri: Uri, call: ApplicationCall) {
+    private suspend fun serveFile(uri: Uri, call: ApplicationCall, onServedToEnd: () -> Unit) {
         val descriptor = try {
             context.contentResolver.openFileDescriptor(uri, "r")
         } catch (e: Exception) {
@@ -109,14 +110,15 @@ class MediaHttpServer @Inject constructor(
             call.respondBytesWriter(contentType = contentType, status = status, contentLength = length) {
                 FileInputStream(pfd.fileDescriptor).use { input ->
                     if (start > 0) input.channel.position(start)
-                    copyRange(input, this, length)
+                    val copied = copyRange(input, this, length)
+                    if (end == fileSize - 1 && copied == length) onServedToEnd()
                 }
             }
         }
     }
 
-    /** Copies exactly [limit] bytes — a plain `copyTo` doesn't stop at a byte-range boundary. */
-    private suspend fun copyRange(input: FileInputStream, output: ByteWriteChannel, limit: Long) {
+    /** Copies exactly [limit] bytes — a plain `copyTo` doesn't stop at a byte-range boundary. Returns how many went out. */
+    private suspend fun copyRange(input: FileInputStream, output: ByteWriteChannel, limit: Long): Long {
         val buffer = ByteArray(64 * 1024)
         var remaining = limit
         while (remaining > 0) {
@@ -126,5 +128,6 @@ class MediaHttpServer @Inject constructor(
             output.writeFully(buffer, 0, read)
             remaining -= read
         }
+        return limit - remaining
     }
 }

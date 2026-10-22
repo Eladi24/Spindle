@@ -31,7 +31,27 @@ class TokenRegistry @Inject constructor() {
 
     fun resolve(token: String): ServedTrack? = tokens[token]
 
+    // What the Node actually read, per token — the only way to tell "the Node can't
+    // reach this phone" and "the Node had the whole file" from the phone's side.
+    private val fetched = ConcurrentHashMap.newKeySet<String>()
+    private val servedToEnd = ConcurrentHashMap.newKeySet<String>()
+
+    fun markFetched(token: String) {
+        fetched += token
+    }
+
+    fun markServedToEnd(token: String) {
+        servedToEnd += token
+    }
+
+    fun wasFetched(token: String): Boolean = token in fetched
+
+    /** The file's last byte went out for [token] — the Node has (had) all of it. */
+    fun wasServedToEnd(token: String): Boolean = token in servedToEnd
+
     fun clear() {
         tokens.clear()
+        fetched.clear()
+        servedToEnd.clear()
     }
 }

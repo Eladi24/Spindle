@@ -75,6 +75,28 @@ class QueueManager {
         position = -1
     }
 
+    /** Everything needed to rebuild this queue after the app restarts (see QueueStore). */
+    data class Snapshot(
+        val items: List<QueueItem>,
+        /** Indices into [items]; a removed item is left out of the order but kept in [items]. */
+        val order: List<Int>,
+        val position: Int,
+        val repeatMode: RepeatMode,
+        val shuffleMode: ShuffleMode,
+    )
+
+    fun snapshot() = Snapshot(items.toList(), order.toList(), position, repeatMode, shuffleMode)
+
+    /** Replaces the whole queue with [snapshot]. Out-of-range indices are dropped. */
+    fun load(snapshot: Snapshot) {
+        items.clear()
+        items.addAll(snapshot.items)
+        order = snapshot.order.filter { it in items.indices }.distinct().toMutableList()
+        position = if (order.isEmpty()) -1 else snapshot.position.coerceIn(0, order.size - 1)
+        repeatMode = snapshot.repeatMode
+        shuffleMode = snapshot.shuffleMode
+    }
+
     fun add(item: QueueItem) {
         items.add(item)
         order.add(items.lastIndex)

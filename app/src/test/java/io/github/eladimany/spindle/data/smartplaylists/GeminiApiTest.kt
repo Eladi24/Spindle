@@ -60,8 +60,11 @@ class GeminiApiTest {
         assertEquals(GeminiApi.Error.BadKey, GeminiApi.error(403, """{"error":{"status":"PERMISSION_DENIED"}}"""))
         assertEquals(GeminiApi.Error.QuotaUsedUp, GeminiApi.error(429, """{"error":{"status":"RESOURCE_EXHAUSTED"}}"""))
         assertEquals(GeminiApi.Error.ModelGone, GeminiApi.error(404, """{"error":{"status":"NOT_FOUND"}}"""))
-        val other = GeminiApi.error(500, "<html>oops</html>")
-        assertTrue(other is GeminiApi.Error.Other && other.httpStatus == 500)
+        val overloaded = """{"error":{"code":503,"message":"The model is overloaded. Please try again later.","status":"UNAVAILABLE"}}"""
+        assertEquals(GeminiApi.Error.Busy, GeminiApi.error(503, overloaded))
+        assertEquals(GeminiApi.Error.Busy, GeminiApi.error(500, "<html>oops</html>"))
+        val other = GeminiApi.error(418, "<html>oops</html>")
+        assertTrue(other is GeminiApi.Error.Other && other.httpStatus == 418)
         assertTrue(GeminiApi.error(400, """{"error":{"status":"INVALID_ARGUMENT","message":"bad field"}}""") is GeminiApi.Error.Other)
     }
 
