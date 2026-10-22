@@ -53,6 +53,15 @@ User report on 0.9.5 (S26+, 2026-10-22) and what was done:
      change during an outage replayed from 0 and overwrote the resume point
      (`onNetworkChanged` now returns while `outage != null`). Screen locked, battery
      "Optimized", 3 songs: heartbeats every 30 s with no gaps, every end advanced.
+   - **Node turned off → back to the phone** (user report the same evening: the app still
+     showed the Node and play did nothing — `play()`/`resume()` in an outage only moved the
+     resume point). `AudioOutputSwitcher`: `NodeOutput.unreachableSince` (outage start,
+     restarted on every phone network change, so a WiFi hop still recovers on the Node) +
+     30 s with the phone on WiFi → disconnect, *This phone* paused at `NodeOutput.resumePoint()`,
+     Toast "<Node> isn't answering — switched to this phone". Play/resume while unreachable
+     (or a play command that just failed) → switch now and play. Tested with the fake Node:
+     auto-switch 30 s after detection (resumed at 0:46 on the phone), play while off-and-paused
+     → instant, play 0.4 s after "power off" → playing on the phone in 2 s.
    - `PlaybackDiagnostics` (from `App`): screen on/off, Doze, power saving, battery setting
      at Node connect, a heartbeat every 30 s while playing on a Node — a gap = app frozen.
 3. **Bluetooth:** "This phone" pins the speaker, so earbuds connecting later stayed silent.

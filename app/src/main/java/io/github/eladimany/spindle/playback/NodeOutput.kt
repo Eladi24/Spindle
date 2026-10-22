@@ -164,6 +164,27 @@ class NodeOutput @Inject constructor(
     private val _state = MutableStateFlow<PlaybackState>(PlaybackState.Idle)
     override val state: StateFlow<PlaybackState> = _state.asStateFlow()
 
+    /**
+     * When the Node stopped answering (elapsedRealtime), restarted on every network change
+     * of the phone's own; null while it answers. AudioOutputSwitcher falls back to the phone
+     * once this is old enough — the Node is off, not just a WiFi blip.
+     */
+    private val _unreachableSince = MutableStateFlow<Long?>(null)
+    val unreachableSince: StateFlow<Long?> = _unreachableSince.asStateFlow()
+
+    val isUnreachable: Boolean get() = outage != null
+
+    /** What to carry over to another output: the item and where it was. */
+    fun resumePoint(): Pair<QueueItem, Long>? {
+        outage?.resumeItem?.let { return it to outage!!.resumeSeconds * 1000L }
+        return when (val state = _state.value) {
+            is PlaybackState.Playing -> state.item to interpolatedPositionMs(state)
+            is PlaybackState.Paused -> state.item to state.positionMs
+            is PlaybackState.Buffering -> state.item to (pendingSeekSeconds ?: 0) * 1000L
+            else -> null
+        }
+    }
+
     // Kept in sync by syncStatusLoop (long-polled /SyncStatus) — setVolume()
     // also writes it optimistically for instant UI feedback, but the next
     // poll response is the actual source of truth.
@@ -211,6 +232,7 @@ class NodeOutput @Inject constructor(
         recoveryJob?.cancel()
         recoveryJob = null
         outage = null
+        _unreachableSince.value = null
         syncFailures = 0
         nodeMac = null
         nodeName = null
@@ -541,6 +563,7 @@ class NodeOutput @Inject constructor(
             else -> Outage(null, 0)
         }
         outage = pending
+        _unreachableSince.value = SystemClock.elapsedRealtime()
         Timber.i("Node unreachable — waiting for it (resume=%s)", pending.resumeItem?.track?.title)
         if (pending.resumeItem != null && !takenOver) _state.value = PlaybackState.Buffering(pending.resumeItem)
         if (state is PlaybackState.Paused) reloadOnResume = true // It may come back rebooted.
@@ -566,6 +589,7 @@ class NodeOutput @Inject constructor(
         rediscoveryJob?.cancel()
         rediscoveryJob = null
         outage = null
+        _unreachableSince.value = null
         syncFailures = 0
         val token = currentToken
         val stillOurs = token != null && status.state == "stream" &&
@@ -830,6 +854,8 @@ class NodeOutput @Inject constructor(
     }
 
     private suspend fun onNetworkChanged() {
+        // The phone's own network moved — a Node silent through that isn't proof it's off.
+        if (outage != null) _unreachableSince.value = SystemClock.elapsedRealtime()
         if (!moveServerToCurrentAddress()) return
         val item = currentItem ?: return
         if (takenOver) return // resume() replays anyway, on the new address.

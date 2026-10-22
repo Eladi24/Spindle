@@ -1,5 +1,9 @@
 package io.github.eladimany.spindle.playback
 
+import android.content.Context
+import android.os.SystemClock
+import android.widget.Toast
+import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.BluOsPlayer
 import io.github.eladimany.spindle.core.model.OutputCapabilities
 import io.github.eladimany.spindle.core.model.PlaybackState
@@ -7,6 +11,11 @@ import io.github.eladimany.spindle.core.model.QueueItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import io.github.eladimany.spindle.data.server.NetworkAddress
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import timber.log.Timber
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +42,7 @@ sealed interface OutputTarget {
 class AudioOutputSwitcher @Inject constructor(
     private val localOutput: LocalOutput,
     private val nodeOutput: NodeOutput,
+    @ApplicationContext private val context: Context,
 ) : AudioOutput {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -60,10 +70,65 @@ class AudioOutputSwitcher @Inject constructor(
 
     override val capabilities: OutputCapabilities get() = active.capabilities
 
-    override suspend fun play(item: QueueItem) = active.play(item)
+    init {
+        // The Node turned off (user, 2026-10-22: the app still showed it, and play did
+        // nothing). Unreachable for NODE_GONE_AFTER_MS while the phone is on WiFi → back to
+        // the phone, paused where it was. The clock restarts on the phone's own network
+        // changes, so a WiFi hop (35 s at the user's home) still recovers on the Node.
+        scope.launch {
+            nodeOutput.unreachableSince.collectLatest { since ->
+                if (since == null) return@collectLatest
+                delay((since + NODE_GONE_AFTER_MS - SystemClock.elapsedRealtime()).coerceAtLeast(0))
+                if (_target.value is OutputTarget.Node && NetworkAddress.wlanIpv4(context) != null) {
+                    fallBackToPhone(play = false)
+                }
+            }
+        }
+    }
+
+    // Play or resume while the Node isn't answering: the phone plays it now, rather
+    // than the button doing nothing until the Node comes back.
+    override suspend fun play(item: QueueItem) {
+        if (nodeIsGone()) {
+            // Play on the item the Node was waiting to resume (shown as buffering): carry on
+            // from where it was, not from the top.
+            if (nodeOutput.resumePoint()?.first?.id == item.id) {
+                fallBackToPhone(play = true)
+                return
+            }
+            fallBackToPhone(play = false)
+        }
+        active.play(item)
+    }
+
     override suspend fun prepare(item: QueueItem, positionMs: Long) = active.prepare(item, positionMs)
     override suspend fun pause() = active.pause()
-    override suspend fun resume() = active.resume()
+
+    override suspend fun resume() {
+        if (nodeIsGone()) {
+            fallBackToPhone(play = true)
+            return
+        }
+        active.resume()
+        // The Node went off moments ago and this very command found out: still play now.
+        if (nodeIsGone()) fallBackToPhone(play = true)
+    }
+
+    private fun nodeIsGone() = _target.value is OutputTarget.Node && nodeOutput.isUnreachable
+
+    /** Disconnects the Node and continues on the phone from the same item and position. */
+    private suspend fun fallBackToPhone(play: Boolean) {
+        val node = (_target.value as? OutputTarget.Node)?.player ?: return
+        val resume = nodeOutput.resumePoint()
+        Timber.i("%s isn't answering — switching to this phone (resume=%s, play=%s)", node.name, resume?.first?.track?.title, play)
+        nodeOutput.disconnect()
+        _target.value = OutputTarget.Local
+        resume?.let { (item, positionMs) ->
+            localOutput.prepare(item, positionMs)
+            if (play) localOutput.resume()
+        }
+        Toast.makeText(context, "${node.name} isn't answering — switched to this phone", Toast.LENGTH_LONG).show()
+    }
     override suspend fun stop() = active.stop()
     override suspend fun seek(seconds: Int) = active.seek(seconds)
     override suspend fun setVolume(percent: Int) = active.setVolume(percent)
@@ -115,5 +180,10 @@ class AudioOutputSwitcher @Inject constructor(
             val resumeSeconds = (resumePositionMs / 1000).toInt()
             if (resumeSeconds > 1) active.seek(resumeSeconds)
         }
+    }
+
+    private companion object {
+        /** Unreachable this long, with the phone on WiFi the whole time, means the Node is off. */
+        const val NODE_GONE_AFTER_MS = 30_000L
     }
 }
