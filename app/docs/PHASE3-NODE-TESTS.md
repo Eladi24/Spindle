@@ -260,6 +260,26 @@ sheet now searches 10 s, then shows ↻ (mockup option A).
 
 ---
 
+## New in 0.9.7 — to check on your phone (2026-10-29)
+
+**Build: `Spindle-0.9.7-beta.apk`** (release, installs over 0.9.x, keeps everything).
+
+- [ ] **P1. No "Choose a device to connect" dialog.** Open Play on (tab title pill or
+      mini-player). **Expect:** one permission prompt the first time ("Nearby devices"),
+      then the Node list. No system device picker. Note the phone's Android version.
+- [ ] **P2. Output pill on every tab.** With nothing playing, tap "This phone ▾" under a
+      tab's title → pick the Node → play a song. **Expect:** it plays on the Node; the pill
+      shows the Node's name with a glow.
+- [ ] **P3. BOOST on the player.** Tap BOOST under the artist → BOOSTED + a short hint. Let the
+      song play to the end. **Expect:** still boosted afterwards (it's for the next smart shuffle).
+- [ ] **P4. More like this.** In the queue, swipe a song right. **Expect:** "N songs like it
+      play next", a "✦ LIKE …" label, tinted rows with a reason; Undo puts the queue back.
+      Long-press a row → boost. Note whether the picks feel similar.
+- [ ] **P5. Playlist length.** Describe sheet → Tracks / Time + slider. Try "45 min" and "30
+      songs"; also type a length in the request ("a 2-hour …"). **Expect:** the draft matches.
+- [ ] **P6. Better AI picks.** "energetic songs for a run" (and 2–3 more moods). **Expect:**
+      takes a few seconds longer than before; the songs fit the mood. Note any misfits.
+
 ## New in 0.9.6 — to check on your phone (2026-10-22)
 
 **Build: `Spindle-0.9.6-beta.apk`** (release, installs over 0.9.x and keeps playlists,

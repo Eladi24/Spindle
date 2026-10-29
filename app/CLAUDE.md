@@ -10,7 +10,56 @@ Do not write a playback engine for that path.
 Protocol facts were measured against real hardware — see `docs/bluos-api.md`.
 Trust that file over any assumption about BluOS.
 
-## ▶ Next session — start here (updated 2026-10-22)
+## ▶ Next session — start here (updated 2026-10-29)
+
+**2026-10-29: S25+ report on 0.9.6, and what was done (0.9.7-beta, uncommitted, not on a phone yet):**
+- Gemini-key playlists work, but "energetic run" picked relaxed songs. Cause: the AI only
+  chose genres + decades, so songs were drawn at random within them. **Built: a second AI step.**
+  `PlaylistMatcher.songsForAi` builds a shortlist (filter matches in the weighted draw, then
+  tracks only *missing* a tag, `PlaylistCriteria.mightMatch`; capped at
+  `AiPlaylistEngine.maxSongsPerRequest`, 600 for the key and 150 for Nano). `SongPickPrompt`
+  lists "n | Artist – Title | year" and the AI returns ranked ids (`{"ids":[…]}`, about
+  `expectedCount` × 1.25). Then `PlaylistMatcher.fill` (artist cap + spread). Fewer than 5 picks
+  or a failure → the plain draw. Runs in `SmartPlaylistGenerator.generate` whenever there's
+  a request, so Remix and dropping a chip on an AI draft ask again. Engines gained
+  `ask(system, user)` and `onDevice`. **The user OK'd sending song names**; AI settings'
+  "What leaves your phone", the describe-sheet footer (it said "On-device" even with the key)
+  and the README now say so. Unit tested (`SongPickPromptTest`, new `PlaylistMatcherTest`
+  cases). **Not run against the live API** (no key here).
+- **"Choose a device to connect / Spindle wants to connect to a device on your local
+  network"** on opening the Play on sheet. This is most likely Android 17's local network
+  protection: targetSdk 37 without `ACCESS_LOCAL_NETWORK`, so Android shows its own picker
+  for NSD. Added the permission to the manifest; `NetworkPermissions` (data/bluos) =
+  NEARBY_WIFI_DEVICES (33+) + ACCESS_LOCAL_NETWORK (37+, same Nearby devices group). The
+  sheet asks for both, and discovery doesn't start without them. **Verify on the S25+**
+  (which Android version? does the dialog stop?).
+- About 25 min of screen-locked play without a break, then maybe a glitch; after a WiFi change, ~30 s with no
+  response. **Pull the playback log** before guessing (the 30 s matches
+  `AudioOutputSwitcher`'s unreachable → switch-to-phone wait).
+- **UI built from the mockup canvas** (https://claude.ai/artifact/LQFK5AcDo2VFtxFQyrU2X3;
+  user picked 4A, 5B, 6 as drawn, 7A). Release **0.9.7-beta (versionCode 8)**, untested on
+  a phone (none connected):
+  - **4A:** `LargeTitleBar` ends the count line with the output pill (`OutputPill`, now its
+    own file, `large` = ▾ + glow on a Node), read from `LocalOutputChip`, provided by
+    AppNavHost. Every tab can open the Play on sheet with nothing loaded.
+  - **5B:** a BOOST / BOOSTED pill under the artist on Now Playing, plus a one-line hint for 2.5 s.
+    `PlayHistoryRecorder` now only spends a boost **the listen started with**. Before, boosting
+    the playing song was used up by that same listen.
+  - **6:** queue swipe right = `MoreLikeThis.pick` (pure, `MoreLikeThisTest`). Score: same
+    artist 3, shared genre 2, same decade 1, neighbouring decade 0.5, minimum 2. Up to 8 songs,
+    at most 3 per artist, spread. The rest of the queue comes first, then library tracks not
+    in the queue. `QueueManager.placeAfter` moves or adds them right after the swiped row,
+    keeping the current song. `PlaybackController.placeAfter`/`undoPlaceAfter` restore the
+    snapshot. Rows show a violet tint and "artist · reason · from your queue/library", with a
+    "✦ LIKE <TITLE> · N" label on the first one. Boost moved to **long-press** on the row.
+    The queue has a hint line at the bottom. Playlist rows keep swipe-right = boost
+    (`SwipeToRemoveOrBoost` now wraps the generic `SwipeToRemoveOr`).
+  - **7A:** `PlaylistLength` is now `(byTime, amount)` on slider steps: minutes 15–60 by 5, then
+    to 240 by 15; tracks 10–100 by 5. `LengthPicker` (Tracks | Time, big value, estimate,
+    slider) is on both the describe and builder sheets. The AI's length is
+    `{"tracks":N}`/`{"minutes":N}`/null, snapped to a step.
+
+### 2026-10-22
 
 **State:** Release **0.9.6-beta (versionCode 7)** built as `Spindle-0.9.6-beta.apk`, for
 the user's S26+. Ask how it went at the Node; if anything is still off, **plug the phone
