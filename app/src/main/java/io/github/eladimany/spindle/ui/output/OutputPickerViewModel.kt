@@ -11,6 +11,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.BluOsPlayer
 import io.github.eladimany.spindle.data.bluos.BluOsDiscovery
+import io.github.eladimany.spindle.data.bluos.NetworkPermissions
 import io.github.eladimany.spindle.data.prefs.BatteryGuidance
 import io.github.eladimany.spindle.data.prefs.SettingsRepository
 import io.github.eladimany.spindle.playback.AudioOutputSwitcher
@@ -95,14 +96,8 @@ class OutputPickerViewModel @Inject constructor(
 
     fun batterySettingsIntent() = batteryGuidance.settingsIntent()
 
-    /** Android 13+ gates NSD behind this — see the manifest and BluOsDiscovery for why nothing is needed pre-33. */
-    fun hasNearbyWifiPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
-        return ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.NEARBY_WIFI_DEVICES,
-        ) == PackageManager.PERMISSION_GRANTED
-    }
+    /** Nearby WiFi devices (33+) and local network access (37+) — see [NetworkPermissions]. */
+    fun hasNearbyWifiPermission(): Boolean = NetworkPermissions.granted(context)
 
     /**
      * Only affects the *label* shown for a Bluetooth route — [LocalAudioRoutes]

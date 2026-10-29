@@ -54,6 +54,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.BluOsPlayer
+import io.github.eladimany.spindle.data.bluos.NetworkPermissions
 import io.github.eladimany.spindle.playback.LocalRoute
 import io.github.eladimany.spindle.playback.LocalRouteKind
 import io.github.eladimany.spindle.playback.OutputTarget
@@ -74,7 +75,7 @@ fun OutputPickerSheet(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { granted ->
-        granted[Manifest.permission.NEARBY_WIFI_DEVICES]?.let { hasNearbyWifiPermission = it }
+        hasNearbyWifiPermission = viewModel.hasNearbyWifiPermission()
         granted[Manifest.permission.BLUETOOTH_CONNECT]?.let { hasBluetoothConnectPermission = it }
     }
 
@@ -210,7 +211,7 @@ fun OutputPickerSheet(
                     PermissionRequestCard(
                         onGrant = {
                             val permissions = buildList {
-                                add(Manifest.permission.NEARBY_WIFI_DEVICES)
+                                addAll(NetworkPermissions.required())
                                 if (!hasBluetoothConnectPermission) add(Manifest.permission.BLUETOOTH_CONNECT)
                             }
                             permissionLauncher.launch(permissions.toTypedArray())

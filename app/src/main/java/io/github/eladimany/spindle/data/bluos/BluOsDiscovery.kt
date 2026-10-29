@@ -1,13 +1,9 @@
 package io.github.eladimany.spindle.data.bluos
 
-import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
-import android.os.Build
-import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.BluOsPlayer
 import kotlinx.coroutines.channels.awaitClose
@@ -31,19 +27,12 @@ private const val SERVICE_TYPE = "_musc._tcp."
 class BluOsDiscovery @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
-    /** Android 13+ gates [NsdManager] behind this — see the manifest for why nothing is added pre-33. */
-    private fun hasNearbyWifiPermission(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
-        return ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.NEARBY_WIFI_DEVICES,
-        ) == PackageManager.PERMISSION_GRANTED
-    }
-
     fun discover(): Flow<List<BluOsPlayer>> = callbackFlow {
         val nsdManager = context.getSystemService(NsdManager::class.java)
-        if (nsdManager == null || !hasNearbyWifiPermission()) {
-            Timber.w("BluOS discovery unavailable (nsdManager=%s, permission=%s)", nsdManager != null, hasNearbyWifiPermission())
+        // Without them Android 17 answers with its own device picker — never start it then.
+        val missing = NetworkPermissions.missing(context)
+        if (nsdManager == null || missing.isNotEmpty()) {
+            Timber.w("BluOS discovery unavailable (nsdManager=%s, missing=%s)", nsdManager != null, missing)
             trySend(emptyList())
             close()
             return@callbackFlow

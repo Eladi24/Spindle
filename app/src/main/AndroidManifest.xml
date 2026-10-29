@@ -28,6 +28,10 @@
     <!-- Some devices silently drop mDNS multicast packets without this held
          for the duration of discovery. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Android 17 (targetSdk 37) blocks LAN traffic without this; asked together with
+         NEARBY_WIFI_DEVICES in the Play on sheet (NetworkPermissions). Without it the
+         system shows its own "Choose a device to connect" picker on every scan. -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- Only for showing a connected Bluetooth output's real name in the
          picker (LocalAudioRoutes) — API 31+; selecting it still works without
          this, just with a generic "Bluetooth device" label. -->
