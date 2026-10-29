@@ -260,6 +260,20 @@ sheet now searches 10 s, then shows ↻ (mockup option A).
 
 ---
 
+## New in 0.9.8 — to check at the Node (2026-10-29)
+
+**Build: `Spindle-0.9.8-beta.apk`** (also has everything from 0.9.7 below). Fixes from the
+S25+ playback log of 2026-10-22.
+
+- [ ] **Q1. Every song advances.** A long session at the Node, screen locked (as N1). **Expect:**
+      no song ends in "paused" — on 10-22 one 3:00 song paused at its end and play replayed it.
+- [ ] **Q2. Other WiFi, at once.** If the phone joins ImanyHome mid-song: **Expect:** "<Node>
+      can't reach this phone…" within ~10 s (it never showed on 10-22), paused; back on
+      ImanyFiber it continues by itself. Best fix: forget ImanyHome on the phone.
+- [ ] **Q3. Car Bluetooth.** Getting into the car while music plays on the phone: does it move
+      to the car, or pause / go back to the phone speaker? (The log shows the car connecting
+      and dropping within 3 s.)
+
 ## New in 0.9.7 — to check on your phone (2026-10-29)
 
 **Build: `Spindle-0.9.7-beta.apk`** (release, installs over 0.9.x, keeps everything).

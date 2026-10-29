@@ -28,14 +28,15 @@ It's built to survive real homes: it reconnects when the WiFi drops, follows you
 - One tap moves playback between the phone, Bluetooth earbuds and your streamer, and it picks up where you were. Connect your headphones and playback follows them.
 - Your queue survives: close the app or come back tomorrow, and it's waiting where you left it.
 - Original files, original quality: FLAC and hi-res go through untouched.
-- Finds players on your network automatically, or connect by IP.
+- Finds players on your network automatically, or connect by IP. Pick your streamer from any tab, even before choosing a song.
 
 **🔀 Smart shuffle**
 - Learns from what you play to the end and what you skip, all on your phone.
 - Keeps the same artist or album from playing twice in a row, and brings back songs you haven't heard in months.
+- Boost a song from the player to hear it sooner. In the queue, swipe a song right and the next 8 songs become ones like it.
 
 **🪄 Playlists that build themselves**
-- *"Mellow 90s for a rainy evening"*: describe a playlist in words and **Gemini Nano** turns it into one, **running entirely on the phone**. No account, no cloud, nothing leaves your device. *(Beta, on phones whose Android offers it to apps, such as the Galaxy S26 series and Pixel 9 and newer.)*
+- *"Mellow 90s for a rainy evening"*: describe a playlist in words, set its length in songs or minutes, and **Gemini Nano** turns it into one, **running entirely on the phone**. No account, no cloud, nothing leaves your device. *(Beta, on phones whose Android offers it to apps, such as the Galaxy S26 series and Pixel 9 and newer.)*
 - Phone without Gemini Nano? Add your own **free Gemini key** from Google AI Studio in a few taps. Your request, your library's genre and decade names and the artist and title of the songs it picks from are sent; with no billing on the key, nothing can ever be charged.
 - No on-device AI? Pick an era, genres and a length, and Spindle builds it from your tags.
 - Every draft shows what Spindle understood, and you can adjust it before saving.
@@ -75,7 +76,7 @@ Streaming needs a real phone on the same WiFi as your player; the Android emulat
 
 ## Status 🚧
 
-Spindle is in beta (0.9.6). Local playback, streaming and smart shuffle work day to day; AI playlists and track-info fixes are new and still being tested on real phones.
+Spindle is in beta (0.9.8). Local playback, streaming and smart shuffle work day to day; AI playlists and track-info fixes are new and still being tested on real phones.
 
 ---
 

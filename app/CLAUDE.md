@@ -12,7 +12,16 @@ Trust that file over any assumption about BluOS.
 
 ## ▶ Next session — start here (updated 2026-10-29)
 
-**2026-10-29: S25+ report on 0.9.6, and what was done (0.9.7-beta, uncommitted, not on a phone yet):**
+**State:** **0.9.8-beta (versionCode 9)**, commit 912a163, pushed. `Spindle-0.9.8-beta.apk` is
+for the user's S25+; the A73 has the 0.9.8 debug build. Nothing from 0.9.7/0.9.8 has run at
+the Node yet. **Start by asking for the results of the 0.9.8 checklist** in
+`docs/PHASE3-NODE-TESTS.md` ("New in 0.9.7" P1–P6 + "New in 0.9.8" Q1–Q2), the S25+'s
+Android version (P1), whether car Bluetooth pauses music, and the user's verdict on Gemini
+playlist quality. For logs, the user copies `playback-log.txt` over **USB file transfer**
+(MTP: Internal storage › Android › data › io.github.eladimany.spindle › files). No USB
+debugging is needed. Offered, not built: a "Share playback log" button (mockup first).
+
+**2026-10-29: S25+ report on 0.9.6, and what was done (0.9.7-beta, then 0.9.8-beta; committed and pushed):**
 - Gemini-key playlists work, but "energetic run" picked relaxed songs. Cause: the AI only
   chose genres + decades, so songs were drawn at random within them. **Built: a second AI step.**
   `PlaylistMatcher.songsForAi` builds a shortlist (filter matches in the weighted draw, then
@@ -51,8 +60,8 @@ Trust that file over any assumption about BluOS.
     3 s ("CAR MULTIMEDIA", "Elantra"); `BluetoothAutoSwitch` then goes back to the speaker. Ask
     whether that pauses music in the car.
 - **UI built from the mockup canvas** (https://claude.ai/artifact/LQFK5AcDo2VFtxFQyrU2X3;
-  user picked 4A, 5B, 6 as drawn, 7A). Release **0.9.7-beta (versionCode 8)**, untested on
-  a phone (none connected):
+  user picked 4A, 5B, 6 as drawn, 7A). Shipped in 0.9.7-beta (versionCode 8). On the A73 it
+  starts, and the output pill shows; nothing else has been tried on a phone yet:
   - **4A:** `LargeTitleBar` ends the count line with the output pill (`OutputPill`, now its
     own file, `large` = ▾ + glow on a Node), read from `LocalOutputChip`, provided by
     AppNavHost. Every tab can open the Play on sheet with nothing loaded.
