@@ -15,7 +15,7 @@ Trust that file over any assumption about BluOS.
 **State:** **0.9.8-beta (versionCode 9)**, commit 912a163, pushed. `Spindle-0.9.8-beta.apk` is
 for the user's S25+; the A73 has the 0.9.8 debug build. Nothing from 0.9.7/0.9.8 has run at
 the Node yet. **Start by asking for the results of the 0.9.8 checklist** in
-`docs/PHASE3-NODE-TESTS.md` ("New in 0.9.7" P1–P6 + "New in 0.9.8" Q1–Q2), the S25+'s
+`docs/PHASE3-NODE-TESTS.md` ("New in 0.9.7" P1–P6 + "New in 0.9.8" Q1–Q3), the S25+'s
 Android version (P1), whether car Bluetooth pauses music, and the user's verdict on Gemini
 playlist quality. For logs, the user copies `playback-log.txt` over **USB file transfer**
 (MTP: Internal storage › Android › data › io.github.eladimany.spindle › files). No USB
