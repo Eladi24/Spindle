@@ -55,6 +55,9 @@ private const val OUTAGE_GIVE_UP_MS = 10 * 60_000L
 private const val TAKEOVER_GRACE_MS = 10_000L
 /** How long the UI keeps showing a seek's target while the Node's reported secs catch up. */
 private const val SEEK_SETTLE_MS = 8_000L
+
+/** A "0 s" status this far into a track, with no seek of ours, is a blip — see applyStatus. */
+private const val ZERO_BLIP_MIN_SECONDS = 10L
 /** Measured: the Node lands ~+2 s past a requested seek (bluos-api.md). */
 private const val SEEK_LANDING_SLACK_SECONDS = 5
 /** A held seek is dropped if the Node hasn't reported canSeek=1 this long after /Play. */
@@ -107,6 +110,8 @@ class NodeOutput @Inject constructor(
     private var lastSyncEtag: String? = null
     private var lastKnownSecs: Int = 0
     private var lastKnownTotalSeconds: Int? = null
+    /** A "0 s" status was just ignored as an end-of-track blip — see applyStatus. */
+    private var ignoredZeroSecs = false
 
     // Ownership of the Node for the current item — see NodeOwnership. Once
     // takenOver, status is ignored until our next play(); the item shows as
@@ -295,6 +300,7 @@ class NodeOutput @Inject constructor(
         currentItem = item
         lastKnownSecs = 0
         lastKnownTotalSeconds = null
+        ignoredZeroSecs = false
         _state.value = PlaybackState.Buffering(item)
 
         val icyName = IcyName.forTrack(item.track.artistName, item.track.title)
@@ -332,17 +338,27 @@ class NodeOutput @Inject constructor(
             if (currentToken != token || takenOver || outage != null || tokenRegistry.wasFetched(token)) return@launch
             Timber.w("Node never fetched %s from %s — it can't reach this phone", item.track.title, serverAddress?.host)
             nodeCommand("stop") { bluOsClient.stop(it) }
-            currentToken = null // Its statuses from here on are about a stream that never started.
-            nodeCantReachUs = true
-            reloadOnResume = true
-            lastKnownSecs = resumeSeconds
-            _state.value = PlaybackState.Paused(item, resumeSeconds * 1000L, item.track.durationMs)
-            Toast.makeText(
-                context,
-                "${player?.name ?: "The player"} can't reach this phone. Is the phone on the same WiFi?",
-                Toast.LENGTH_LONG,
-            ).show()
+            cantReachUs(item, resumeSeconds)
         }
+    }
+
+    /**
+     * Paused at [resumeSeconds] because the Node can't fetch from this phone (it's on
+     * another network — at the user's home, the second router's WiFi). Says so, and the
+     * next network change retries by itself ([onNetworkChanged]).
+     */
+    private fun cantReachUs(item: QueueItem, resumeSeconds: Int) {
+        fetchWatchdogJob?.cancel()
+        currentToken = null // Its statuses from here on are about a stream that never started.
+        nodeCantReachUs = true
+        reloadOnResume = true
+        lastKnownSecs = resumeSeconds
+        _state.value = PlaybackState.Paused(item, resumeSeconds * 1000L, item.track.durationMs)
+        Toast.makeText(
+            context,
+            "${player?.name ?: "The player"} can't reach this phone. Is the phone on the same WiFi?",
+            Toast.LENGTH_LONG,
+        ).show()
     }
 
     /**
@@ -731,6 +747,7 @@ class NodeOutput @Inject constructor(
                     Timber.w("Node never reported canSeek=1 — dropping the seek to %ds", target)
                     pendingSeekSeconds = null
                 }
+                val seeking = seekTarget != null
                 seekTarget?.let { target ->
                     // The Node lands ~2 s past the target (bluos-api.md); anything else
                     // is a pre-seek status — keep showing the target until it settles.
@@ -740,6 +757,18 @@ class NodeOutput @Inject constructor(
                     if (!landed) Timber.w("Seek to %ds didn't land (Node at %ds) — trusting the Node", target, status.secs)
                     seekTarget = null
                 }
+                // Seen at the real Node (S25+, 2026-10-22): a "stream at 0 s" status moments
+                // before a track's natural end. Taken at face value, the stop that follows
+                // reads as "stopped at 0 s" — mid-track — and the queue paused instead of
+                // advancing. With no seek of ours, a jump back to 0 from well into the track
+                // is ignored once; a second one in a row is real (a restart from elsewhere).
+                val shownSecs = (_state.value.elapsedMs() ?: 0L) / 1000
+                if (!seeking && status.secs <= 1 && shownSecs >= ZERO_BLIP_MIN_SECONDS && !ignoredZeroSecs) {
+                    Timber.w("Node reported %ds at ~%ds into the track — ignored once", status.secs, shownSecs)
+                    ignoredZeroSecs = true
+                    return
+                }
+                ignoredZeroSecs = false
                 lastKnownSecs = status.secs
                 _state.value = PlaybackState.Playing(item, status.secs * 1000L, durationMs)
                 scheduleEndCheck(item, status.secs, lastKnownTotalSeconds)
@@ -763,6 +792,15 @@ class NodeOutput @Inject constructor(
                 // reports on changes, so after a seek near the end its last secs can be
                 // several seconds short and a natural end read as a stop (found at the Node).
                 val positionSecs = ((_state.value.elapsedMs() ?: (lastKnownSecs * 1000L)) / 1000L).toInt()
+                // The real Node gives up ~10 s after /Play when it can't fetch from us — before
+                // the 12 s watchdog, so the stop read as a plain mid-track stop: no message, no
+                // retry, and play pressed meanwhile restarted the watchdog (S25+, 2026-10-22).
+                if (!tokenRegistry.wasFetched(token)) {
+                    Timber.w("Node stopped without fetching %s from %s — it can't reach this phone", item.track.title, serverAddress?.host)
+                    endCheckJob?.cancel()
+                    cantReachUs(item, positionSecs)
+                    return
+                }
                 val servedToEnd = tokenRegistry.wasServedToEnd(token)
                 val naturalEnd = seenOurs && NodeTrackEnd.isNaturalEnd(
                     positionSecs,

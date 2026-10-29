@@ -36,6 +36,20 @@ Trust that file over any assumption about BluOS.
 - About 25 min of screen-locked play without a break, then maybe a glitch; after a WiFi change, ~30 s with no
   response. **Pull the playback log** before guessing (the 30 s matches
   `AudioOutputSwitcher`'s unreachable → switch-to-phone wait).
+- **S25+ playback log (0.9.6, 10-22 20:32–23:20 at the Node), read 2026-10-29; fixed in 0.9.8-beta (versionCode 9):**
+  ~2 h on the Node, screen mostly off, and every end advanced except one:
+  - **22:11 "Are You Ready" (3:00) ended → paused instead of next.** The Node sent a "stream at
+    0 s" status just before its stop, so the stop read as "stopped at ~0 s" (mid-track). Now a
+    jump back to 0 from ≥10 s in, with no seek of ours, is ignored once (`ignoredZeroSecs`).
+  - **21:53 the "30 s with no response":** the phone hopped to ImanyHome (192.168.31.117) for
+    ~30 s. The Node gave up after ~10 s (connecting → stop), before the 12 s fetch watchdog, so
+    no message and no retry. A play pressed at 12 s restarted the watchdog, and the outage then
+    cancelled it. Now a stop for a token the Node never fetched = `cantReachUs` at once (toast,
+    retry on the next network change). Still advise forgetting ImanyHome on the S25+.
+  - 20:59 one status poll timed out (a WiFi blip). The Node had already read the file and
+    nothing audible is logged. No Node use after 10-22. Car Bluetooth connects and drops within
+    3 s ("CAR MULTIMEDIA", "Elantra"); `BluetoothAutoSwitch` then goes back to the speaker. Ask
+    whether that pauses music in the car.
 - **UI built from the mockup canvas** (https://claude.ai/artifact/LQFK5AcDo2VFtxFQyrU2X3;
   user picked 4A, 5B, 6 as drawn, 7A). Release **0.9.7-beta (versionCode 8)**, untested on
   a phone (none connected):
