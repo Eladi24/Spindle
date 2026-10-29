@@ -186,6 +186,27 @@ class PlaybackController @Inject constructor(
         refreshQueueState()
     }
 
+    /** What [placeAfter] did: the queue's ids for the placed songs, and how to undo it. */
+    class Placed(val itemIds: List<String>, internal val before: QueueManager.Snapshot)
+
+    /** "More like this": [picks] play right after [anchorId], queue songs moved, the rest added. */
+    fun placeAfter(anchorId: String, picks: List<MoreLikeThis.Pick>): Placed {
+        val before = queueManager.snapshot()
+        val sequence = picks.map { it.queueItem ?: QueueItem(id = "q${it.track.id}-${nextQueueItemSeq++}", track = it.track) }
+        queueManager.placeAfter(anchorId, sequence)
+        refreshQueueState()
+        return Placed(sequence.map { it.id }, before)
+    }
+
+    /** Undo for [placeAfter]: the queue as it was, still on whatever is playing now. */
+    fun undoPlaceAfter(placed: Placed) {
+        val current = queueManager.currentItem ?: return
+        if (placed.before.order.none { placed.before.items[it].id == current.id }) return
+        queueManager.load(placed.before.copy(repeatMode = queueManager.repeatMode, shuffleMode = queueManager.shuffleMode))
+        queueManager.jumpTo(current.id)
+        refreshQueueState()
+    }
+
     fun togglePlayPause() {
         when (playbackState.value) {
             is PlaybackState.Playing -> scope.launch { output.pause() }

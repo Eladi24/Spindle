@@ -12,8 +12,11 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 /**
@@ -29,6 +32,8 @@ class PlayHistoryRecorder @Inject constructor(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var session: ListenSession? = null
+    /** Whether the track was boosted when its listen began — see [endCurrent]. */
+    private var boostedAtStart: Deferred<Boolean>? = null
 
     init {
         // Bounded storage: raw events for a year (~0.6 MB at 30 plays/day).
@@ -39,6 +44,8 @@ class PlayHistoryRecorder @Inject constructor(
     fun onItemStarted(item: QueueItem) {
         endCurrent(PlayEndReason.REPLACED)
         session = ListenSession(item, System.currentTimeMillis())
+        val key = trackKey(item.track)
+        boostedAtStart = scope.async { key in settings.boostedTrackKeys.first() }
     }
 
     fun onState(state: PlaybackState) {
@@ -54,6 +61,8 @@ class PlayHistoryRecorder @Inject constructor(
     fun endCurrent(reason: PlayEndReason) {
         val s = session ?: return
         session = null
+        val wasBoosted = boostedAtStart
+        boostedAtStart = null
         val listenedMs = s.listenedMs(System.currentTimeMillis())
         // Nothing was heard (e.g. tapped through while still buffering) — not a listen.
         if (listenedMs <= 0 && reason != PlayEndReason.COMPLETED) return
@@ -70,7 +79,9 @@ class PlayHistoryRecorder @Inject constructor(
             dao.insert(event)
             // A boost lasts one play: used up once the track has really been listened to —
             // not by skipping past it (seen on the A73: a 1 s skip-through spent the boost).
-            if (listenedMs >= minOf(BOOST_SPENT_AFTER_MS, track.durationMs / 2)) {
+            // Only a boost the listen began with: boosting the song that's playing (the
+            // player's BOOST pill) is for its next time, not used up by this very listen.
+            if (wasBoosted?.await() == true && listenedMs >= minOf(BOOST_SPENT_AFTER_MS, track.durationMs / 2)) {
                 settings.setBoosted(event.trackKey, boosted = false)
             }
         }

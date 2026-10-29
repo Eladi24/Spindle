@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,7 +28,8 @@ import java.text.NumberFormat
 
 /**
  * The top of every tab: a 34sp bold title, a count line under it, and round glass
- * action buttons. Replaces the stock TopAppBar so all tabs share one style.
+ * action buttons. Replaces the stock TopAppBar so all tabs share one style. The count
+ * line ends with the output pill ([LocalOutputChip]): pick the Node before any song.
  */
 @Composable
 fun LargeTitleBar(
@@ -36,14 +38,14 @@ fun LargeTitleBar(
     modifier: Modifier = Modifier,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
-    Row(
+    val output = LocalOutputChip.current
+    Column(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
             .padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.Bottom,
     ) {
-        Column(Modifier.weight(1f)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 title,
                 fontSize = 34.sp,
@@ -52,16 +54,26 @@ fun LargeTitleBar(
                 letterSpacing = (-1).sp,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
+        }
+        Row(
+            modifier = Modifier.heightIn(min = 34.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             // Always takes its line, so the bar doesn't grow when the count arrives.
             Text(
                 subtitle.orEmpty(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (output != null) OutputPill(output.name, output.isNode, output.onClick, large = true)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically, content = actions)
     }
 }
 

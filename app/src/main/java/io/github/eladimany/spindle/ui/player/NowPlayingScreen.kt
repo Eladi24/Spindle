@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -77,10 +78,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.R
 import io.github.eladimany.spindle.core.model.PlaybackState
+import io.github.eladimany.spindle.data.history.trackKey
 import io.github.eladimany.spindle.playback.QueueManager
 import io.github.eladimany.spindle.playback.QueueState
 import io.github.eladimany.spindle.ui.components.SparkleIcon
@@ -120,6 +123,15 @@ fun NowPlayingScreen(
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val queueState by viewModel.queueState.collectAsStateWithLifecycle()
     val volume by viewModel.volume.collectAsStateWithLifecycle()
+    val boostedKeys by viewModel.boostedTrackKeys.collectAsStateWithLifecycle()
+    // One line under the pill after a tap: what a boost does.
+    var boostHint by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(boostHint) {
+        if (boostHint != null) {
+            delay(2500)
+            boostHint = null
+        }
+    }
 
     // Above the early return below: switching outputs passes through Idle for a
     // moment, and state declared after the return would reset — closing the picker
@@ -313,6 +325,22 @@ fun NowPlayingScreen(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    val boosted = trackKey(item.track) in boostedKeys
+                    BoostPill(
+                        boosted = boosted,
+                        onClick = {
+                            viewModel.toggleBoost(item.track)
+                            boostHint = if (boosted) "Boost removed" else "Comes up sooner in your next smart shuffle"
+                        },
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                    Text(
+                        boostHint.orEmpty(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = HeroAccent,
+                        maxLines = 1,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
                     if (queueState.items.isNotEmpty() && queueState.currentIndex >= 0) {
                         Text(
                             "Track ${queueState.currentIndex + 1} of ${queueState.items.size}",
@@ -476,6 +504,38 @@ private fun ShuffleModeButton(
                     .size(10.dp),
             )
         }
+    }
+}
+
+/** BOOST under the artist; BOOSTED (filled, glowing) once tapped — for the next smart shuffle. */
+@Composable
+private fun BoostPill(boosted: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier = modifier
+            .then(if (boosted) Modifier.glow(HeroAccent.copy(alpha = 0.45f), radius = 12.dp, cornerRadius = 16.dp) else Modifier)
+            .clip(shape)
+            .background(if (boosted) HeroAccent.copy(alpha = 0.28f) else HeroAccent.copy(alpha = 0.08f))
+            .border(1.dp, HeroAccent.copy(alpha = if (boosted) 0.9f else 0.45f), shape)
+            .clickable(
+                role = Role.Switch,
+                onClickLabel = if (boosted) "Remove boost" else "Boost",
+                onClick = onClick,
+            )
+            .semantics { contentDescription = if (boosted) "Boosted for your next smart shuffle" else "Boost this song" }
+            .heightIn(min = 32.dp)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(SparkleIcon, contentDescription = null, tint = if (boosted) HeroOnBackdrop else HeroAccent, modifier = Modifier.size(13.dp))
+        Text(
+            if (boosted) "BOOSTED" else "BOOST",
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.6.sp,
+            color = if (boosted) HeroOnBackdrop else HeroAccent,
+        )
     }
 }
 

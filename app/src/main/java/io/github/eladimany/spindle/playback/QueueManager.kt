@@ -234,6 +234,25 @@ class QueueManager {
         }
     }
 
+    /**
+     * Plays [sequence] right after [anchorId] ("more like this"). An item already in the
+     * play order (by id) moves there; a new one is added. Whatever is playing keeps playing.
+     */
+    fun placeAfter(anchorId: String, sequence: List<QueueItem>) {
+        if (order.none { items[it].id == anchorId }) return
+        val current = order.getOrNull(position)
+        val slots = sequence.filter { it.id != anchorId }.distinctBy { it.id }.map { item ->
+            items.indexOfFirst { it.id == item.id }.takeIf { it >= 0 } ?: run {
+                items.add(item)
+                items.lastIndex
+            }
+        }
+        order.removeAll(slots.toSet())
+        val at = order.indexOfFirst { items[it].id == anchorId } + 1
+        order.addAll(at, slots)
+        position = current?.let { order.indexOf(it) } ?: position
+    }
+
     fun remove(queueItemId: String) {
         val idx = order.indexOfFirst { items[it].id == queueItemId }
         if (idx == -1) return

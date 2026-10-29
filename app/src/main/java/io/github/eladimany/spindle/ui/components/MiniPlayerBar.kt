@@ -214,41 +214,6 @@ fun MiniPlayerBar(
     }
 }
 
-/** Where it's playing — tap to switch, same as the "Playing on" chip on Now Playing. */
-@Composable
-private fun OutputPill(name: String, isNode: Boolean, onClick: () -> Unit) {
-    val primary = MaterialTheme.colorScheme.primary
-    val shape = RoundedCornerShape(15.dp)
-    Row(
-        modifier = Modifier
-            .widthIn(max = 118.dp)
-            .height(30.dp)
-            .clip(shape)
-            .background(primary.copy(alpha = 0.12f))
-            .border(1.dp, primary.copy(alpha = 0.35f), shape)
-            .clickable(onClickLabel = "Change output", onClick = onClick)
-            .semantics { contentDescription = "Playing on $name" }
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(5.dp),
-    ) {
-        Icon(
-            if (isNode) Icons.Default.Speaker else Icons.Default.PhoneAndroid,
-            contentDescription = null,
-            tint = primary,
-            modifier = Modifier.size(14.dp),
-        )
-        Text(
-            name,
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = primary,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
 /** The thin line along the bottom edge: how far into the song, with a soft glow on the played part. */
 @Composable
 private fun ProgressLine(fraction: Float, modifier: Modifier = Modifier) {

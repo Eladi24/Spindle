@@ -2,13 +2,15 @@ package io.github.eladimany.spindle.ui.player
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,17 +43,22 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.QueueItem
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.history.trackKey
 import io.github.eladimany.spindle.ui.components.BoostTag
-import io.github.eladimany.spindle.ui.components.SwipeToRemoveOrBoost
+import io.github.eladimany.spindle.ui.components.SparkleIcon
+import io.github.eladimany.spindle.ui.components.SwipeToRemoveOr
 import io.github.eladimany.spindle.ui.components.TrackArtwork
 import kotlinx.coroutines.launch
 
@@ -68,6 +75,7 @@ fun QueueScreen(
 ) {
     val queueState by viewModel.queueState.collectAsStateWithLifecycle()
     val boostedKeys by viewModel.boostedTrackKeys.collectAsStateWithLifecycle()
+    val likeGroup by viewModel.likeGroup.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     fun announce(message: String, onUndo: () -> Unit) {
@@ -88,10 +96,27 @@ fun QueueScreen(
     val listState = rememberLazyListState()
 
     val currentItemId = queueState.items.getOrNull(queueState.currentIndex)?.id
+    // The "LIKE …" label sits on the first of the songs the last swipe placed.
+    val firstLikeId = likeGroup?.let { group -> displayItems.firstOrNull { it.id in group.reasons }?.id }
 
     Scaffold(
         modifier = modifier,
         snackbarHost = { SnackbarHost(snackbarHostState) },
+        // Swipe right changed from boost to "more like this" — say what each gesture does.
+        bottomBar = {
+            if (displayItems.isNotEmpty()) {
+                Text(
+                    "→ More like this   ·   ← Remove   ·   Long-press: Boost",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(vertical = 12.dp),
+                )
+            }
+        },
         topBar = {
             TopAppBar(
                 title = { Text(if (displayItems.isEmpty()) "Queue" else "Queue (${displayItems.size})") },
@@ -137,81 +162,119 @@ fun QueueScreen(
                     ),
                 ) {
                     val boosted = trackKey(item.track) in boostedKeys
-                    SwipeToRemoveOrBoost(
-                        boosted = boosted,
-                        onRemove = {
-                            val index = displayItems.indexOfFirst { it.id == item.id }
-                            viewModel.removeFromQueue(item.id)
-                            displayItems = displayItems.filter { it.id != item.id }
-                            announce("Removed “${item.track.title}”") { viewModel.restoreToQueue(item.id, index) }
-                        },
-                        onToggleBoost = {
+                    val toggleBoost = {
+                        viewModel.toggleBoost(item.track)
+                        announce(if (boosted) "Boost removed" else "Boosted for your next smart shuffle") {
                             viewModel.toggleBoost(item.track)
-                            announce(if (boosted) "Boost removed" else "Boosted for your next smart shuffle") {
-                                viewModel.toggleBoost(item.track)
-                            }
-                        },
-                    ) { _ ->
-                        QueueRow(
-                            item = item,
-                            isCurrent = item.id == currentItemId,
-                            isDragging = isDragging,
-                            boosted = boosted,
-                            dragOffsetY = if (isDragging) dragDeltaY else 0f,
-                            onClick = { viewModel.jumpTo(item.id) },
-                            fetchArtworkUri = viewModel::artworkUriFor,
-                            onDragStart = {
-                                draggingId = item.id
-                                dragDeltaY = 0f
-                                // Measured fresh from the live layout right as the drag starts —
-                                // guaranteed to be this item's real on-screen height (divider
-                                // included, since it's part of the same itemsIndexed slot) at
-                                // this exact moment, not a value some other row reported earlier
-                                // that may since have drifted.
-                                rowHeightPx = listState.layoutInfo.visibleItemsInfo
-                                    .find { it.key == item.id }?.size?.toFloat() ?: 0f
+                        }
+                    }
+                    Column {
+                        likeGroup?.takeIf { item.id == firstLikeId }?.let { LikeHeader(it.seedTitle, it.reasons.size) }
+                        SwipeToRemoveOr(
+                            rightLabel = "More like this",
+                            onRemove = {
+                                val index = displayItems.indexOfFirst { it.id == item.id }
+                                viewModel.removeFromQueue(item.id)
+                                displayItems = displayItems.filter { it.id != item.id }
+                                announce("Removed “${item.track.title}”") { viewModel.restoreToQueue(item.id, index) }
                             },
-                            onDrag = { delta ->
-                                dragDeltaY += delta
-                                if (rowHeightPx <= 0f) return@QueueRow
-                                // Half-item hysteresis, and a loop rather than a single step, so
-                                // a fast flick across several rows in one callback still lands
-                                // correctly instead of stalling partway. Re-deriving the target
-                                // index from displayItems each iteration (rather than reading
-                                // LazyListState.layoutInfo again) matters here: layoutInfo only
-                                // reflects a swap after the next measure/layout pass, so reading
-                                // it mid-loop would see stale offsets and swap the wrong pair.
-                                while (dragDeltaY > rowHeightPx / 2f) {
-                                    val currentIndex = displayItems.indexOfFirst { it.id == item.id }
-                                    if (currentIndex >= displayItems.lastIndex) break
-                                    displayItems = displayItems.toMutableList().apply {
-                                        add(currentIndex + 1, removeAt(currentIndex))
+                            onSwipeRight = {
+                                scope.launch {
+                                    val placed = viewModel.moreLikeThis(item.id)
+                                    if (placed == 0) {
+                                        snackbarHostState.currentSnackbarData?.dismiss()
+                                        snackbarHostState.showSnackbar("Nothing similar found. This song has few tags to go by.")
+                                    } else {
+                                        announce("$placed songs like it play next") { viewModel.undoMoreLikeThis() }
                                     }
-                                    dragDeltaY -= rowHeightPx
                                 }
-                                while (dragDeltaY < -rowHeightPx / 2f) {
-                                    val currentIndex = displayItems.indexOfFirst { it.id == item.id }
-                                    if (currentIndex <= 0) break
-                                    displayItems = displayItems.toMutableList().apply {
-                                        add(currentIndex - 1, removeAt(currentIndex))
+                            },
+                        ) { _ ->
+                            QueueRow(
+                                item = item,
+                                isCurrent = item.id == currentItemId,
+                                isDragging = isDragging,
+                                boosted = boosted,
+                                likeReason = likeGroup?.reasons?.get(item.id),
+                                onLongClick = toggleBoost,
+                                dragOffsetY = if (isDragging) dragDeltaY else 0f,
+                                onClick = { viewModel.jumpTo(item.id) },
+                                fetchArtworkUri = viewModel::artworkUriFor,
+                                onDragStart = {
+                                    draggingId = item.id
+                                    dragDeltaY = 0f
+                                    // Measured fresh from the live layout right as the drag starts —
+                                    // guaranteed to be this item's real on-screen height (divider
+                                    // included, since it's part of the same itemsIndexed slot) at
+                                    // this exact moment, not a value some other row reported earlier
+                                    // that may since have drifted.
+                                    rowHeightPx = listState.layoutInfo.visibleItemsInfo
+                                        .find { it.key == item.id }?.size?.toFloat() ?: 0f
+                                },
+                                onDrag = { delta ->
+                                    dragDeltaY += delta
+                                    if (rowHeightPx <= 0f) return@QueueRow
+                                    // Half-item hysteresis, and a loop rather than a single step, so
+                                    // a fast flick across several rows in one callback still lands
+                                    // correctly instead of stalling partway. Re-deriving the target
+                                    // index from displayItems each iteration (rather than reading
+                                    // LazyListState.layoutInfo again) matters here: layoutInfo only
+                                    // reflects a swap after the next measure/layout pass, so reading
+                                    // it mid-loop would see stale offsets and swap the wrong pair.
+                                    while (dragDeltaY > rowHeightPx / 2f) {
+                                        val currentIndex = displayItems.indexOfFirst { it.id == item.id }
+                                        if (currentIndex >= displayItems.lastIndex) break
+                                        displayItems = displayItems.toMutableList().apply {
+                                            add(currentIndex + 1, removeAt(currentIndex))
+                                        }
+                                        dragDeltaY -= rowHeightPx
                                     }
-                                    dragDeltaY += rowHeightPx
-                                }
-                            },
-                            onDragEnd = {
-                                val originalIndex = queueState.items.indexOfFirst { it.id == item.id }
-                                val finalIndex = displayItems.indexOfFirst { it.id == item.id }
-                                if (originalIndex >= 0 && finalIndex >= 0 && originalIndex != finalIndex) {
-                                    viewModel.moveInQueue(originalIndex, finalIndex)
-                                }
-                                draggingId = null
-                                dragDeltaY = 0f
-                            },
-                        )
+                                    while (dragDeltaY < -rowHeightPx / 2f) {
+                                        val currentIndex = displayItems.indexOfFirst { it.id == item.id }
+                                        if (currentIndex <= 0) break
+                                        displayItems = displayItems.toMutableList().apply {
+                                            add(currentIndex - 1, removeAt(currentIndex))
+                                        }
+                                        dragDeltaY += rowHeightPx
+                                    }
+                                },
+                                onDragEnd = {
+                                    val originalIndex = queueState.items.indexOfFirst { it.id == item.id }
+                                    val finalIndex = displayItems.indexOfFirst { it.id == item.id }
+                                    if (originalIndex >= 0 && finalIndex >= 0 && originalIndex != finalIndex) {
+                                        viewModel.moveInQueue(originalIndex, finalIndex)
+                                    }
+                                    draggingId = null
+                                    dragDeltaY = 0f
+                                },
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** "✦ LIKE CHILDREN OF THE SEA · 8" above the songs a swipe right placed. */
+@Composable
+private fun LikeHeader(seedTitle: String, count: Int) {
+    val primary = MaterialTheme.colorScheme.primary
+    Row(
+        modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(SparkleIcon, contentDescription = null, tint = primary, modifier = Modifier.size(12.dp))
+        Text(
+            "LIKE ${seedTitle.uppercase()} · $count",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp,
+            color = primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -221,6 +284,8 @@ private fun QueueRow(
     isCurrent: Boolean,
     isDragging: Boolean,
     boosted: Boolean,
+    likeReason: String?,
+    onLongClick: () -> Unit,
     dragOffsetY: Float,
     onClick: () -> Unit,
     fetchArtworkUri: suspend (Track) -> String?,
@@ -240,7 +305,13 @@ private fun QueueRow(
             .scale(if (isDragging) 1.02f else 1f)
             .shadow(elevation = if (isDragging) 6.dp else 0.dp, shape = RoundedCornerShape(16.dp)),
         shape = RoundedCornerShape(16.dp),
-        color = if (isDragging) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+        color = when {
+            isDragging -> MaterialTheme.colorScheme.primaryContainer
+            // Placed by "more like this": a light violet tint, as in the mockup.
+            likeReason != null -> MaterialTheme.colorScheme.primary.copy(alpha = 0.09f)
+                .compositeOver(MaterialTheme.colorScheme.surface)
+            else -> MaterialTheme.colorScheme.surface
+        },
         // Tonal elevation for "currently playing" instead of a flat gray swap.
         tonalElevation = if (isCurrent && !isDragging) 6.dp else 0.dp,
     ) {
@@ -250,12 +321,17 @@ private fun QueueRow(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Only this part is clickable (jump to track) — the ripple stays confined
-            // to here instead of covering the drag handle too. Removing is a swipe left.
+            // Only this part is clickable (jump to track; long-press boosts) — the ripple
+            // stays confined to here instead of covering the drag handle too. Removing is
+            // a swipe left, "more like this" a swipe right.
             Row(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable(onClick = onClick),
+                    .combinedClickable(
+                        onClick = onClick,
+                        onLongClick = onLongClick,
+                        onLongClickLabel = if (boosted) "Remove boost" else "Boost",
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TrackArtwork(
@@ -275,7 +351,12 @@ private fun QueueRow(
                         )
                         if (boosted) BoostTag(Modifier.padding(start = 8.dp))
                     }
-                    Text(item.track.artistName, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+                    Text(
+                        listOfNotNull(item.track.artistName, likeReason).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
             // 48dp is Material's minimum touch target — the icon itself is only 24dp,

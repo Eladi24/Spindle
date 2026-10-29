@@ -5,19 +5,27 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.data.db.dao.TrackDao
 import io.github.eladimany.spindle.data.history.trackKey
 import io.github.eladimany.spindle.data.library.ArtworkRepository
+import io.github.eladimany.spindle.data.library.toDomain
 import io.github.eladimany.spindle.data.prefs.SettingsRepository
+import io.github.eladimany.spindle.di.IoDispatcher
 import io.github.eladimany.spindle.playback.AudioOutputSwitcher
+import io.github.eladimany.spindle.playback.MoreLikeThis
 import io.github.eladimany.spindle.playback.OutputTarget
 import io.github.eladimany.spindle.playback.PlaybackController
 import io.github.eladimany.spindle.playback.QueueManager
 import io.github.eladimany.spindle.playback.QueueState
 import javax.inject.Inject
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Shared playback UI state — the mini-player bar and Now Playing screen both use the
@@ -28,6 +36,8 @@ class PlayerViewModel @Inject constructor(
     private val controller: PlaybackController,
     private val artworkRepository: ArtworkRepository,
     private val settings: SettingsRepository,
+    private val trackDao: TrackDao,
+    @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     audioOutputSwitcher: AudioOutputSwitcher,
 ) : ViewModel() {
 
@@ -58,6 +68,37 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch { settings.setBoosted(key, key !in boostedTrackKeys.value) }
     }
     fun moveInQueue(from: Int, to: Int) = controller.move(from, to)
+
+    /** The songs the last "more like this" placed — the queue labels and tints them. */
+    data class LikeGroup(val seedTitle: String, val reasons: Map<String, String>, val placed: PlaybackController.Placed)
+
+    private val _likeGroup = MutableStateFlow<LikeGroup?>(null)
+    val likeGroup: StateFlow<LikeGroup?> = _likeGroup.asStateFlow()
+
+    /**
+     * Swipe right in the queue: up to [MoreLikeThis.COUNT] similar songs right after
+     * [anchorId] — the rest of the queue first, then the library. Returns how many.
+     */
+    suspend fun moreLikeThis(anchorId: String): Int {
+        val items = queueState.value.items
+        val anchorIndex = items.indexOfFirst { it.id == anchorId }
+        if (anchorIndex == -1) return 0
+        val seed = items[anchorIndex].track
+        val picks = withContext(ioDispatcher) {
+            val library = trackDao.getAllByTitle().map { it.toDomain() }
+            MoreLikeThis.pick(seed, items.drop(anchorIndex + 1), library, items.mapTo(HashSet()) { it.track.id })
+        }
+        if (picks.isEmpty()) return 0
+        val placed = controller.placeAfter(anchorId, picks)
+        _likeGroup.value = LikeGroup(seed.title, placed.itemIds.zip(picks.map { it.reason }).toMap(), placed)
+        return picks.size
+    }
+
+    fun undoMoreLikeThis() {
+        val group = _likeGroup.value ?: return
+        controller.undoPlaceAfter(group.placed)
+        _likeGroup.value = null
+    }
     /** Off → Shuffle → Smart → Off. Returns the new mode, for the button's pop-up label. */
     fun cycleShuffleMode(): QueueManager.ShuffleMode {
         val next = when (queueState.value.shuffleMode) {

@@ -217,4 +217,32 @@ class QueueManagerTest {
         assertEquals(4, manager.size)
         assertEquals(fixture.filter { it.id != "q3" }.map { it.id }.toSet(), manager.queue.map { it.id }.toSet())
     }
+
+    @Test
+    fun `placeAfter moves queue songs and adds new ones right after the anchor`() {
+        manager.jumpTo("q2")
+        val new = QueueItem(id = "n9", track = track(9))
+        manager.placeAfter("q2", listOf(fixture[4], new, fixture[3]))
+        assertEquals(listOf("q1", "q2", "q5", "n9", "q4", "q3"), manager.queue.map { it.id })
+        assertEquals("q2", manager.currentItem?.id)
+        assertEquals("q5", manager.next()?.id)
+    }
+
+    @Test
+    fun `placeAfter before the playing song keeps the playing song current`() {
+        manager.jumpTo("q4")
+        manager.placeAfter("q1", listOf(fixture[4]))
+        assertEquals(listOf("q1", "q5", "q2", "q3", "q4"), manager.queue.map { it.id })
+        assertEquals("q4", manager.currentItem?.id)
+    }
+
+    @Test
+    fun `placeAfter an unknown anchor changes nothing, and load undoes it`() {
+        val before = manager.snapshot()
+        manager.placeAfter("nope", listOf(fixture[4]))
+        assertEquals(fixture.map { it.id }, manager.queue.map { it.id })
+        manager.placeAfter("q1", listOf(QueueItem(id = "n9", track = track(9))))
+        manager.load(before)
+        assertEquals(fixture.map { it.id }, manager.queue.map { it.id })
+    }
 }

@@ -49,6 +49,8 @@ import io.github.eladimany.spindle.playback.OutputTarget
 import io.github.eladimany.spindle.playback.QueueManager
 import io.github.eladimany.spindle.ui.components.FloatingNavBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
+import io.github.eladimany.spindle.ui.components.LocalOutputChip
+import io.github.eladimany.spindle.ui.components.OutputChipState
 import io.github.eladimany.spindle.ui.components.MiniPlayerBar
 import io.github.eladimany.spindle.ui.components.NavTab
 import io.github.eladimany.spindle.ui.components.countLabel
@@ -123,6 +125,14 @@ fun AppNavHost() {
     }
     var showOutputPicker by remember { mutableStateOf(false) }
     if (showOutputPicker) OutputPickerSheet(onDismiss = { showOutputPicker = false })
+    // A static local: a new value recomposes every tab's title bar, so only on a real change.
+    val outputChip = remember(outputTarget) {
+        OutputChipState(
+            name = outputTarget.displayName(),
+            isNode = outputTarget is OutputTarget.Node,
+            onClick = { showOutputPicker = true },
+        )
+    }
     // Previewed by the mini-player's swipe crossfade — wrap on repeat-all, otherwise
     // null past either end, matching QueueManager.next()/previous()'s own boundary rules.
     val nextTrack = queueState.items.getOrNull(queueState.currentIndex + 1)?.track
@@ -193,7 +203,10 @@ fun AppNavHost() {
             // each list pads itself via LocalBottomOverlayPadding instead. Now Playing and
             // Queue have no overlay and keep the plain inset padding they always had.
             val overlayBottom = innerPadding.calculateBottomPadding()
-            CompositionLocalProvider(LocalBottomOverlayPadding provides if (showMiniPlayer) overlayBottom else 0.dp) {
+            CompositionLocalProvider(
+                LocalBottomOverlayPadding provides if (showMiniPlayer) overlayBottom else 0.dp,
+                LocalOutputChip provides outputChip,
+            ) {
                 NavHost(
                     navController = navController,
                     startDestination = Routes.ARTISTS,

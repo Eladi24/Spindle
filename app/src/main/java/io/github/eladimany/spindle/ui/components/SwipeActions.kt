@@ -33,11 +33,7 @@ import androidx.compose.ui.unit.sp
 
 /**
  * Swipe left to remove, swipe right to boost (or un-boost) for the next smart shuffle.
- * Used by the queue and playlist rows in place of a trash icon. A boost swipe springs
- * back — the row stays; a remove swipe leaves the row to the caller to drop from its list.
- * The caller shows the Undo snackbar for both. [content] gets `swiping = true` while
- * the row is off its resting place — a clear row must go opaque then, or the action
- * underneath shows through it.
+ * Used by the playlist rows in place of a trash icon; see [SwipeToRemoveOr].
  */
 @Composable
 fun SwipeToRemoveOrBoost(
@@ -46,13 +42,35 @@ fun SwipeToRemoveOrBoost(
     onToggleBoost: () -> Unit,
     modifier: Modifier = Modifier,
     content: @Composable (swiping: Boolean) -> Unit,
+) = SwipeToRemoveOr(
+    rightLabel = if (boosted) "Un-boost" else "Boost",
+    onRemove = onRemove,
+    onSwipeRight = onToggleBoost,
+    modifier = modifier,
+    content = content,
+)
+
+/**
+ * Swipe left to remove, swipe right for [rightLabel] (boost on playlist rows, "more like
+ * this" in the queue). A right swipe springs back — the row stays; a remove swipe leaves
+ * the row to the caller to drop from its list. The caller shows the Undo snackbar for
+ * both. [content] gets `swiping = true` while the row is off its resting place — a clear
+ * row must go opaque then, or the action underneath shows through it.
+ */
+@Composable
+fun SwipeToRemoveOr(
+    rightLabel: String,
+    onRemove: () -> Unit,
+    onSwipeRight: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable (swiping: Boolean) -> Unit,
 ) {
     // Plain remember, not rememberSwipeToDismissBoxState: that one is saveable, and a lazy
     // list keeps saved state per key — a row brought back by Undo came back already
     // swiped to "remove" and removed itself again.
     val state = remember { SwipeToDismissBoxState(SwipeToDismissBoxValue.Settled, positionalThreshold = { it * 0.35f }) }
     val currentOnRemove by rememberUpdatedState(onRemove)
-    val currentOnToggleBoost by rememberUpdatedState(onToggleBoost)
+    val currentOnSwipeRight by rememberUpdatedState(onSwipeRight)
     // Not SwipeToDismissBox's onDismiss: its effect is keyed on the lambda too, so every
     // recomposition while settled (toggling the boost causes one) fired it again — the
     // boost flipped back and forth and the row stuck half-open. Once per settle here.
@@ -60,7 +78,7 @@ fun SwipeToRemoveOrBoost(
         when (state.settledValue) {
             SwipeToDismissBoxValue.EndToStart -> currentOnRemove()
             SwipeToDismissBoxValue.StartToEnd -> {
-                currentOnToggleBoost()
+                currentOnSwipeRight()
                 state.reset()
             }
             SwipeToDismissBoxValue.Settled -> Unit
@@ -69,12 +87,12 @@ fun SwipeToRemoveOrBoost(
     SwipeToDismissBox(
         state = state,
         modifier = modifier,
-        backgroundContent = { SwipeBackground(state.dismissDirection, boosted) },
+        backgroundContent = { SwipeBackground(state.dismissDirection, rightLabel) },
     ) { content(state.dismissDirection != SwipeToDismissBoxValue.Settled) }
 }
 
 @Composable
-private fun SwipeBackground(direction: SwipeToDismissBoxValue, boosted: Boolean) {
+private fun SwipeBackground(direction: SwipeToDismissBoxValue, rightLabel: String) {
     val colors = MaterialTheme.colorScheme
     val shape = RoundedCornerShape(16.dp)
     when (direction) {
@@ -104,7 +122,7 @@ private fun SwipeBackground(direction: SwipeToDismissBoxValue, boosted: Boolean)
         ) {
             Icon(SparkleIcon, contentDescription = null, tint = colors.primary, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text(if (boosted) "Un-boost" else "Boost", color = colors.primary, fontWeight = FontWeight.Bold)
+            Text(rightLabel, color = colors.primary, fontWeight = FontWeight.Bold)
         }
         SwipeToDismissBoxValue.Settled -> Unit
     }
