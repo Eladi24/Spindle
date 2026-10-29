@@ -43,7 +43,7 @@ object GeminiApi {
     /** "AIza••••••••k3Fq" — enough to recognise, not enough to use. */
     fun mask(key: String): String = if (key.length <= 8) "••••" else key.take(4) + "••••••••" + key.takeLast(4)
 
-    fun requestBody(systemInstruction: String, userText: String): String = JSONObject()
+    fun requestBody(systemInstruction: String, userText: String, temperature: Double = 0.2): String = JSONObject()
         .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemInstruction))))
         .put(
             "contents",
@@ -56,8 +56,8 @@ object GeminiApi {
         .put(
             "generationConfig",
             JSONObject()
-                // Classification, not creative writing.
-                .put("temperature", 0.2)
+                // Low: classification, not creative writing.
+                .put("temperature", temperature)
                 // Roomy: newer models may spend part of it thinking before the JSON.
                 .put("maxOutputTokens", 1024)
                 .put("responseMimeType", "application/json"),

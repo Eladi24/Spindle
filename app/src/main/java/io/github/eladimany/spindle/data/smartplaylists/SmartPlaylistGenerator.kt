@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import timber.log.Timber
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -46,7 +47,8 @@ sealed interface AiRequestState {
  * builder sheet (which makes it) and the draft screen (which shows it) share one copy.
  *
  * Generation loads every track once (~3900 rows, a one-off on IO) — the matcher needs
- * genre, year, duration and the history key of each. Milliseconds, so no progress UI.
+ * genre, year, duration and the history key of each. Milliseconds without AI; an AI
+ * request shows its own working row on Playlists.
  */
 @Singleton
 class SmartPlaylistGenerator @Inject constructor(
@@ -100,9 +102,14 @@ class SmartPlaylistGenerator @Inject constructor(
         _aiRequest.value = null
     }
 
-    /** Makes a new draft from [criteria]. [name] keeps a name the user already typed. */
+    /**
+     * Makes a new draft from [criteria]. [name] keeps a name the user already typed. With
+     * a [request] and an AI at hand, the AI picks from a shortlist of matching songs
+     * ([SongPickPrompt]) — tags alone can't tell an energetic song from a ballad; without
+     * one, or if that step fails, the matcher's own draw is the draft.
+     */
     suspend fun generate(criteria: PlaylistCriteria, name: String? = null, request: String? = null): PlaylistDraft {
-        val tracks = withContext(ioDispatcher) {
+        val (library, stats) = withContext(ioDispatcher) {
             val library = trackDao.getAllByTitle().map { it.toDomain() }
             val stats = if (criteria.leanOnHistory) {
                 playEventDao.statsByTrackKey().associate {
@@ -111,9 +118,35 @@ class SmartPlaylistGenerator @Inject constructor(
             } else {
                 emptyMap()
             }
-            PlaylistMatcher.pick(library, criteria, stats, ::trackKey, System.currentTimeMillis())
+            library to stats
         }
+        val now = System.currentTimeMillis()
+        val tracks = request?.takeIf { engine.status.value == AiEngineStatus.Ready }
+            ?.let { aiPick(it, library, criteria, stats, now) }
+            ?: withContext(Dispatchers.Default) { PlaylistMatcher.pick(library, criteria, stats, ::trackKey, now) }
         return PlaylistDraft(criteria, name ?: criteria.suggestedName(), tracks, request).also { _draft.value = it }
+    }
+
+    /** The AI's picks, filled to length; null to fall back to the plain draw. */
+    private suspend fun aiPick(
+        request: String,
+        library: List<Track>,
+        criteria: PlaylistCriteria,
+        stats: Map<Long, TrackStats>,
+        now: Long,
+    ): List<Track>? {
+        val songs = withContext(Dispatchers.Default) {
+            PlaylistMatcher.songsForAi(library, criteria, stats, ::trackKey, now, engine.maxSongsPerRequest)
+        }
+        if (songs.size < MIN_AI_PICKS) return null
+        // A few extra so the per-artist cap still leaves enough.
+        val count = PlaylistMatcher.expectedCount(criteria.length, songs) * 5 / 4
+        val reply = engine.ask(SongPickPrompt.systemInstruction(count), SongPickPrompt.userText(request, songs))
+        val picked = (reply as? AskResult.Success)?.let { SongPickPrompt.parse(it.text, songs) }
+        Timber.i("AI picked %s of %d songs for \"%s\"", picked?.size ?: reply, songs.size, request)
+        // Too few to be a real answer — likely a confused reply, not a strict one.
+        if (picked == null || picked.size < MIN_AI_PICKS) return null
+        return PlaylistMatcher.fill(picked, criteria.length)
     }
 
     fun update(draft: PlaylistDraft) {
@@ -123,5 +156,9 @@ class SmartPlaylistGenerator @Inject constructor(
     fun clear() {
         _draft.value = null
         if (_aiRequest.value is AiRequestState.Ready) _aiRequest.value = null
+    }
+
+    private companion object {
+        const val MIN_AI_PICKS = 5
     }
 }

@@ -46,7 +46,6 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.data.smartplaylists.AiEngineStatus
 import io.github.eladimany.spindle.data.smartplaylists.PlaylistCriteria
-import io.github.eladimany.spindle.data.smartplaylists.PlaylistLength
 import io.github.eladimany.spindle.ui.components.glow
 
 /** Genres shown before "All genres…" — the rest are one tap away. */
@@ -156,9 +155,7 @@ fun BuildPlaylistSheet(
                     }
                 }
 
-                Section("LENGTH") {
-                    LengthSegments(selected = state.criteria.length, onSelect = viewModel::setLength)
-                }
+                LengthPicker(length = state.criteria.length, onChange = viewModel::setLength)
 
                 Row(
                     modifier = Modifier
@@ -270,47 +267,6 @@ internal fun FilterPill(
             },
         )
         trailing?.invoke()
-    }
-}
-
-@Composable
-internal fun LengthSegments(selected: PlaylistLength, onSelect: (PlaylistLength) -> Unit) {
-    val colors = MaterialTheme.colorScheme
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(Color.Black.copy(alpha = 0.3f))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(22.dp))
-            .padding(4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        PlaylistLength.entries.forEach { length ->
-            val isSelected = length == selected
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .height(36.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(if (isSelected) colors.primary.copy(alpha = 0.18f) else Color.Transparent)
-                    .border(
-                        1.dp,
-                        if (isSelected) colors.primary.copy(alpha = 0.45f) else Color.Transparent,
-                        RoundedCornerShape(18.dp),
-                    )
-                    .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(length) }),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    length.label,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                    color = if (isSelected) colors.onPrimaryContainer else colors.onSurfaceVariant,
-                )
-            }
-        }
     }
 }
 

@@ -30,11 +30,20 @@ sealed interface InterpretResult {
     data class Failure(val message: String) : InterpretResult
 }
 
+/** A plain answer from the model, for prompts other than [CriteriaPrompt]. */
+sealed interface AskResult {
+    data class Success(val text: String) : AskResult
+
+    /** [message] is shown to the user as is. */
+    data class Failure(val message: String) : AskResult
+}
+
 /**
- * Turns a free-text request into [PlaylistCriteria] ([CriteriaPrompt] does the wording).
+ * Turns a free-text request into [PlaylistCriteria] ([CriteriaPrompt] does the wording),
+ * then picks from a shortlist of the user's songs ([SongPickPrompt], through [ask]).
  * Gemini Nano on the phone first ([GeminiNanoEngine]), the user's own Gemini key when
- * Nano is unavailable ([GeminiKeyEngine]) — [AiEngineRouter] picks. Track picking never
- * moves into the engine — it stays [PlaylistMatcher], over the user's own library.
+ * Nano is unavailable ([GeminiKeyEngine]) — [AiEngineRouter] picks. The engine only
+ * ever sees songs [PlaylistMatcher] listed from the user's own library.
  */
 interface AiPlaylistEngine {
     val status: StateFlow<AiEngineStatus>
@@ -52,4 +61,13 @@ interface AiPlaylistEngine {
     fun stopDownload()
 
     suspend fun interpret(request: String, facets: LibraryFacets, default: PlaylistCriteria): InterpretResult
+
+    /** True when the model runs on the phone — nothing about the request leaves it. */
+    val onDevice: Boolean
+
+    /** How many songs one [SongPickPrompt] request may list — Gemini Nano's input is small. */
+    val maxSongsPerRequest: Int
+
+    /** [system] + [user] in, the model's text out. Never throws. */
+    suspend fun ask(system: String, user: String): AskResult
 }

@@ -161,4 +161,64 @@ class PlaylistMatcherTest {
         assertEquals(listOf(Facet(1970, 2), Facet(1990, 1)), facets.decades)
         assertEquals(listOf(Facet("Rock", 3), Facet("Blues", 1)), facets.genres)
     }
+
+    @Test
+    fun `a missing tag might match, a different one doesn't`() {
+        val c = PlaylistCriteria(decades = setOf(1990), genres = setOf("Rock"))
+        assertTrue(c.mightMatch(null, null))
+        assertTrue(c.mightMatch("rock", null))
+        assertTrue(c.mightMatch(" ", 1994))
+        assertFalse(c.mightMatch("Jazz", null))
+        assertFalse(c.mightMatch(null, 1975))
+    }
+
+    @Test
+    fun `the AI's shortlist puts tagged matches first, then untagged ones, never other genres`() {
+        val rock = (1L..5L).map { track(it, genre = "Rock") }
+        val untagged = (6L..8L).map { track(it) }
+        val jazz = (9L..10L).map { track(it, genre = "Jazz") }
+        val songs = PlaylistMatcher.songsForAi(
+            rock + untagged + jazz, PlaylistCriteria(genres = setOf("Rock")), emptyMap(), { it.id }, now, size = 100, Random(3),
+        )
+        assertEquals((1L..5L).toSet(), songs.take(5).map { it.id }.toSet())
+        assertEquals((6L..8L).toSet(), songs.drop(5).map { it.id }.toSet())
+    }
+
+    @Test
+    fun `the AI's shortlist is cut to size`() {
+        val library = (1L..50L).map { track(it) }
+        assertEquals(10, PlaylistMatcher.songsForAi(library, PlaylistCriteria(), emptyMap(), { it.id }, now, size = 10).size)
+    }
+
+    @Test
+    fun `expected count follows the songs' typical length`() {
+        assertEquals(20, PlaylistMatcher.expectedCount(PlaylistLength.TWENTY_TRACKS, emptyList()))
+        val threeMinute = (1L..9L).map { track(it, durationMs = 3 * minute) }
+        assertEquals(20, PlaylistMatcher.expectedCount(PlaylistLength.ONE_HOUR, threeMinute))
+        assertEquals(15, PlaylistMatcher.expectedCount(PlaylistLength.ONE_HOUR, emptyList()))
+    }
+
+    @Test
+    fun `fill keeps the ranking's songs, capped per artist, and stops at the length`() {
+        // 30 ranked songs, the first 10 by one artist: 20 tracks allow 4 of them.
+        val ranked = (1L..10L).map { track(it, artistId = 99) } + (11L..30L).map { track(it) }
+        val filled = PlaylistMatcher.fill(ranked, PlaylistLength.TWENTY_TRACKS)
+        assertEquals(20, filled.size)
+        assertEquals(4, filled.count { it.artistId == 99L })
+        assertEquals((1L..4L).toSet() + (11L..26L).toSet(), filled.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `length labels, switching units and the matcher's targets`() {
+        assertEquals("20 tracks", PlaylistLength.TWENTY_TRACKS.label)
+        assertEquals("~1 h 30 min", PlaylistLength.minutes(90).label)
+        assertEquals(PlaylistLength(byTime = false, amount = 10), PlaylistLength.minutes(45).switched()) // tracks come in 5s
+        assertEquals(PlaylistLength(byTime = true, amount = 60), PlaylistLength.tracks(15).switched())
+        assertEquals(15, PlaylistLength.TIME_STEPS.first())
+        assertEquals(240, PlaylistLength.TIME_STEPS.last())
+        val library = (1L..100L).map { track(it, durationMs = 3 * minute) }
+        assertEquals(35, pick(library, PlaylistCriteria(length = PlaylistLength.tracks(35))).size)
+        val total = pick(library, PlaylistCriteria(length = PlaylistLength.minutes(45))).sumOf { it.durationMs }
+        assertTrue(total in (45 * minute - 90_000)..(48 * minute))
+    }
 }

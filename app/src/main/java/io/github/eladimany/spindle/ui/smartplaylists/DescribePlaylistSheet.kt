@@ -63,13 +63,14 @@ val RequestSuggestions = listOf("Songs I used to love", "Sunday morning", "Loud 
 @Composable
 fun DescribePlaylistSheet(
     initialText: String,
+    onDevice: Boolean,
     onDismiss: () -> Unit,
     onMake: (request: String, default: PlaylistCriteria) -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var text by rememberSaveable { mutableStateOf(initialText) }
-    var length by rememberSaveable { mutableStateOf(PlaylistLength.ONE_HOUR) }
+    var length by rememberSaveable(stateSaver = PlaylistLengthSaver) { mutableStateOf(PlaylistLength.ONE_HOUR) }
     var lean by rememberSaveable { mutableStateOf(true) }
     val angle by rememberGlintAngle(periodMs = 4_000)
     val canMake = text.isNotBlank()
@@ -123,15 +124,7 @@ fun DescribePlaylistSheet(
                 }
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    "LENGTH",
-                    style = MaterialTheme.typography.labelMedium,
-                    letterSpacing = 0.6.sp,
-                    color = colors.onSurfaceVariant,
-                )
-                LengthSegments(selected = length, onSelect = { length = it })
-            }
+            LengthPicker(length = length, onChange = { length = it })
 
             Row(
                 modifier = Modifier
@@ -173,7 +166,8 @@ fun DescribePlaylistSheet(
             ) {
                 Icon(Icons.Outlined.Lock, contentDescription = null, tint = colors.onSurfaceVariant, modifier = Modifier.size(14.dp))
                 Text(
-                    "On-device AI. Nothing leaves your phone.",
+                    if (onDevice) "On-device AI. Nothing leaves your phone."
+                    else "Your request and song names go to Gemini with your key.",
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant,
                 )

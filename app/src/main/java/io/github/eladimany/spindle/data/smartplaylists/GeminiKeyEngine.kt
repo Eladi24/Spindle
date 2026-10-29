@@ -37,9 +37,10 @@ sealed interface KeyCheck {
  * fallback for phones where Android doesn't open Gemini Nano to apps (the Galaxy S25
  * family). [AiEngineRouter] only uses it when Nano is unavailable.
  *
- * Sends what [CriteriaPrompt] sends Nano: the request plus the library's genre and
- * decade names — never tracks, audio or file paths. One call per request, no retries:
- * on the free plan's limit Google answers 429 and the user is told to try later.
+ * Sends what Nano gets: the request plus the library's genre and decade names
+ * ([CriteriaPrompt]), then a shortlist of song titles, artists and years
+ * ([SongPickPrompt]) — never audio or file paths. On the free plan's limit Google
+ * answers 429 and the user is told to try later; nothing is retried then.
  */
 @Singleton
 class GeminiKeyEngine @Inject constructor(private val keyStore: GeminiKeyStore) : AiPlaylistEngine {
@@ -100,10 +101,29 @@ class GeminiKeyEngine @Inject constructor(private val keyStore: GeminiKeyStore) 
         request: String,
         facets: LibraryFacets,
         default: PlaylistCriteria,
-    ): InterpretResult {
+    ): InterpretResult =
+        when (val reply = generate(GeminiApi.requestBody(CriteriaPrompt.systemInstruction, CriteriaPrompt.userText(request, facets)))) {
+            is AskResult.Failure -> InterpretResult.Failure(reply.message)
+            is AskResult.Success -> CriteriaPrompt.parse(reply.text, facets, default)
+                ?.let { InterpretResult.Success(it) }
+                ?: InterpretResult.Failure("The AI's answer didn't make sense. Try rewording it.")
+        }
+
+    override val onDevice: Boolean = false
+
+    /**
+     * Flash-Lite reads a million tokens; the limit is the free plan's tokens per minute
+     * (~250k) and the wait — 600 songs is ~10k tokens and a few seconds.
+     */
+    override val maxSongsPerRequest: Int = 600
+
+    // A little warmer than the filters: picking songs is taste, and Remix should vary.
+    override suspend fun ask(system: String, user: String): AskResult =
+        generate(GeminiApi.requestBody(system, user, temperature = 0.5))
+
+    private suspend fun generate(body: String): AskResult {
         val key = key.value ?: keyStore.key.first()
-            ?: return InterpretResult.Failure("Add a free Gemini key in AI settings first.")
-        val body = GeminiApi.requestBody(CriteriaPrompt.systemInstruction, CriteriaPrompt.userText(request, facets))
+            ?: return AskResult.Failure("Add a free Gemini key in AI settings first.")
         return try {
             // Google answers 503 when a model is overloaded — common on the free plan at
             // busy times. Wait and retry, then try the other free models before giving up.
@@ -121,10 +141,8 @@ class GeminiKeyEngine @Inject constructor(private val keyStore: GeminiKeyStore) 
                 if (code in 200..299) {
                     val reply = GeminiApi.replyText(text)
                     Timber.d("Gemini (%s) reply: %s", model, reply)
-                    return reply
-                        ?.let { CriteriaPrompt.parse(it, facets, default) }
-                        ?.let { InterpretResult.Success(it) }
-                        ?: InterpretResult.Failure("The AI's answer didn't make sense. Try rewording it.")
+                    return reply?.let { AskResult.Success(it) }
+                        ?: AskResult.Failure("The AI's answer didn't make sense. Try rewording it.")
                 }
                 val error = GeminiApi.error(code, text)
                 Timber.w("Gemini (%s) failed: %s", model, error)
@@ -134,26 +152,26 @@ class GeminiKeyEngine @Inject constructor(private val keyStore: GeminiKeyStore) 
                         if (busyRetries < BUSY_WAITS_MS.size) {
                             delay(BUSY_WAITS_MS[busyRetries++])
                         } else if (++busyModels >= GeminiApi.MODELS.size - modelIndex) {
-                            return InterpretResult.Failure("Gemini is overloaded right now (on Google's side). Try again in a minute.")
+                            return AskResult.Failure("Gemini is overloaded right now (on Google's side). Try again in a minute.")
                         } else {
                             busyRetries = 0
                         }
                     }
                     GeminiApi.Error.BadKey ->
-                        return InterpretResult.Failure("Your Gemini key stopped working. Check it in AI settings.")
+                        return AskResult.Failure("Your Gemini key stopped working. Check it in AI settings.")
                     GeminiApi.Error.QuotaUsedUp ->
-                        return InterpretResult.Failure("Gemini's free limit is used up for now. Try again later — nothing is charged.")
+                        return AskResult.Failure("Gemini's free limit is used up for now. Try again later — nothing is charged.")
                     is GeminiApi.Error.Other ->
-                        return InterpretResult.Failure("Gemini couldn't answer (error $code). Try again in a moment.")
+                        return AskResult.Failure("Gemini couldn't answer (error $code). Try again in a moment.")
                 }
             }
             modelIndex = 0
-            InterpretResult.Failure("Google no longer offers the free Gemini model Spindle uses. An app update is needed.")
+            AskResult.Failure("Google no longer offers the free Gemini model Spindle uses. An app update is needed.")
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Timber.w(e, "Gemini request failed")
-            InterpretResult.Failure("Couldn't reach Gemini. Check the internet connection.")
+            AskResult.Failure("Couldn't reach Gemini. Check the internet connection.")
         }
     }
 

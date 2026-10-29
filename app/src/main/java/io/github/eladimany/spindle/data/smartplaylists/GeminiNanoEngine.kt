@@ -124,38 +124,48 @@ class GeminiNanoEngine @Inject constructor() : AiPlaylistEngine {
         request: String,
         facets: LibraryFacets,
         default: PlaylistCriteria,
-    ): InterpretResult {
+    ): InterpretResult =
+        // Low and fixed-ish: this is classification, not creative writing.
+        when (val reply = generate(CriteriaPrompt.systemInstruction, CriteriaPrompt.userText(request, facets), 0.2f, 256)) {
+            is AskResult.Failure -> InterpretResult.Failure(reply.message)
+            is AskResult.Success -> CriteriaPrompt.parse(reply.text, facets, default)
+                ?.let { InterpretResult.Success(it) }
+                ?: InterpretResult.Failure("The AI's answer didn't make sense. Try rewording it.")
+        }
+
+    override val onDevice: Boolean = true
+
+    /** Input is limited to ~4000 tokens; a song line is ~15, leaving room for the instructions. */
+    override val maxSongsPerRequest: Int = 150
+
+    override suspend fun ask(system: String, user: String): AskResult = generate(system, user, 0.4f, 512)
+
+    private suspend fun generate(system: String, user: String, temperature: Float, maxTokens: Int): AskResult {
         if (_status.value != AiEngineStatus.Ready) {
-            return InterpretResult.Failure("On-device AI isn't ready on this phone.")
+            return AskResult.Failure("On-device AI isn't ready on this phone.")
         }
         return try {
             val response = client().generateContent(
-                generateContentRequest(
-                    SystemInstruction(CriteriaPrompt.systemInstruction),
-                    TextPart(CriteriaPrompt.userText(request, facets)),
-                ) {
-                    // Low and fixed-ish: this is classification, not creative writing.
-                    temperature = 0.2f
+                generateContentRequest(SystemInstruction(system), TextPart(user)) {
+                    this.temperature = temperature
                     topK = 10
-                    maxOutputTokens = 256
+                    maxOutputTokens = maxTokens
                 },
             )
             val text = response.candidates.firstOrNull()?.text.orEmpty()
             Timber.d("Gemini Nano reply: %s", text)
-            CriteriaPrompt.parse(text, facets, default)
-                ?.let { InterpretResult.Success(it) }
-                ?: InterpretResult.Failure("The AI's answer didn't make sense. Try rewording it.")
+            AskResult.Success(text)
         } catch (e: CancellationException) {
             throw e
         } catch (e: GenAiException) {
             Timber.w(e, "Gemini Nano failed (code %d)", e.errorCode)
-            InterpretResult.Failure(
+            AskResult.Failure(
                 if (e.retryDelay != null) "The on-device AI is busy. Try again in a moment."
                 else "The on-device AI couldn't answer. Try again with Spindle open.",
             )
         } catch (e: Exception) {
             Timber.w(e, "Gemini Nano failed")
-            InterpretResult.Failure("The on-device AI couldn't answer.")
+            AskResult.Failure("The on-device AI couldn't answer.")
         }
     }
 

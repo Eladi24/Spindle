@@ -36,7 +36,7 @@ It's built to survive real homes: it reconnects when the WiFi drops, follows you
 
 **🪄 Playlists that build themselves**
 - *"Mellow 90s for a rainy evening"*: describe a playlist in words and **Gemini Nano** turns it into one, **running entirely on the phone**. No account, no cloud, nothing leaves your device. *(Beta, on phones whose Android offers it to apps, such as the Galaxy S26 series and Pixel 9 and newer.)*
-- Phone without Gemini Nano? Add your own **free Gemini key** from Google AI Studio in a few taps. Only your request and your library's genre and decade names are sent; with no billing on the key, nothing can ever be charged.
+- Phone without Gemini Nano? Add your own **free Gemini key** from Google AI Studio in a few taps. Your request, your library's genre and decade names and the artist and title of the songs it picks from are sent; with no billing on the key, nothing can ever be charged.
 - No on-device AI? Pick an era, genres and a length, and Spindle builds it from your tags.
 - Every draft shows what Spindle understood, and you can adjust it before saving.
 

@@ -383,8 +383,9 @@ private fun PrivacyNote() {
             Text("What leaves your phone", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         }
         Text(
-            "Only your request and the genre and decade names in your library — never tracks, audio " +
-                "or file locations. Free-plan requests may be used by Google to improve its models.",
+            "Your request, the genre and decade names in your library, and the artist, title and year " +
+                "of the songs Gemini picks from (up to 600 per request) — never audio or file locations. " +
+                "Free-plan requests may be used by Google to improve its models.",
             style = MaterialTheme.typography.bodySmall,
             color = colors.onSurfaceVariant,
         )

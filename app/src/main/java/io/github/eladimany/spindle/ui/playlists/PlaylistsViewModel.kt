@@ -27,11 +27,14 @@ class PlaylistsViewModel @Inject constructor(
     private val repository: PlaylistRepository,
     private val artworkRepository: ArtworkRepository,
     private val generator: SmartPlaylistGenerator,
-    engine: AiPlaylistEngine,
+    private val engine: AiPlaylistEngine,
 ) : ViewModel() {
 
     val aiStatus: StateFlow<AiEngineStatus> = engine.status
     val aiRequest: StateFlow<AiRequestState?> = generator.aiRequest
+
+    /** Gemini Nano on the phone, or the user's Gemini key in Google's cloud. */
+    val aiOnDevice: Boolean get() = engine.onDevice
 
     /** Sends a free-text request to the AI; the answer shows up as the in-progress row. */
     fun makeFromRequest(request: String, default: PlaylistCriteria = PlaylistCriteria()) =

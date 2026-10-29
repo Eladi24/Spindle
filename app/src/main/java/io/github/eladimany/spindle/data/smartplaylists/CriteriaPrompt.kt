@@ -22,12 +22,13 @@ object CriteriaPrompt {
     val systemInstruction = """
         You turn a music request into filters for the user's own music library.
         Reply with ONE JSON object and nothing else:
-        {"genres": [...], "decades": [...], "length": "...", "name": "..."}
+        {"genres": [...], "decades": [...], "length": ..., "name": "..."}
         - genres: only exact names from GENRES that fit the request. [] means any genre.
         - decades: only numbers from DECADES (1990 means the 90s). [] means any year.
         - For a mood or activity (mellow, party, focus, rainy day), choose the genres
           and decades that usually fit it.
-        - length: "20_tracks", "1_hour" or "2_hours". Use "1_hour" unless the request says otherwise.
+        - length: {"tracks": N} or {"minutes": N} only when the request says how long
+          ("30 songs", "2 hours", "a 40-minute run"); otherwise null.
         - name: a short playlist title, at most 4 words, in the language of the request.
     """.trimIndent()
 
@@ -64,10 +65,11 @@ object CriteriaPrompt {
             .mapNotNull { decadeFrom(it) }
             .filterTo(LinkedHashSet()) { it in known }
 
-        val length = when (json.optString("length")) {
-            "20_tracks" -> PlaylistLength.TWENTY_TRACKS
-            "1_hour" -> PlaylistLength.ONE_HOUR
-            "2_hours" -> PlaylistLength.TWO_HOURS
+        val lengthJson = json.optJSONObject("length")
+        val length = when {
+            lengthJson == null -> default.length
+            lengthJson.optInt("minutes") > 0 -> PlaylistLength.minutes(lengthJson.optInt("minutes"))
+            lengthJson.optInt("tracks") > 0 -> PlaylistLength.tracks(lengthJson.optInt("tracks"))
             else -> default.length
         }
         val name = json.optString("name").trim().take(40).ifEmpty { null }

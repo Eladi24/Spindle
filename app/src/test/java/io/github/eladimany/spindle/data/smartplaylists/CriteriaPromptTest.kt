@@ -26,7 +26,7 @@ class CriteriaPromptTest {
     @Test
     fun `a clean reply becomes criteria`() {
         val result = CriteriaPrompt.parse(
-            """{"genres":["Trip-hop","indie rock"],"decades":[1990],"length":"2_hours","name":"Rainy-day 90s"}""",
+            """{"genres":["Trip-hop","indie rock"],"decades":[1990],"length":{"minutes":120},"name":"Rainy-day 90s"}""",
             facets,
             default,
         )!!
@@ -56,6 +56,16 @@ class CriteriaPromptTest {
         assertTrue(result.criteria.genres.isEmpty())
         assertEquals(PlaylistLength.TWENTY_TRACKS, result.criteria.length) // unknown → user's choice
         assertNull(result.name)
+    }
+
+    @Test
+    fun `a length from the request lands on the slider's steps, null keeps the user's`() {
+        fun length(json: String) = CriteriaPrompt.parse("""{"genres":[],"length":$json}""", facets, default)!!.criteria.length
+        assertEquals(PlaylistLength(byTime = true, amount = 40), length("""{"minutes":40}"""))
+        assertEquals(PlaylistLength(byTime = true, amount = 105), length("""{"minutes":100}"""))
+        assertEquals(PlaylistLength(byTime = false, amount = 30), length("""{"tracks":30}"""))
+        assertEquals(PlaylistLength(byTime = false, amount = 100), length("""{"tracks":500}"""))
+        assertEquals(default.length, length("null"))
     }
 
     @Test

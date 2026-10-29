@@ -188,6 +188,7 @@ fun PlaylistsScreen(
     if (showDescribe) {
         DescribePlaylistSheet(
             initialText = "",
+            onDevice = viewModel.aiOnDevice,
             onDismiss = { showDescribe = false },
             onMake = { request, default ->
                 showDescribe = false

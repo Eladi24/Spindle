@@ -53,6 +53,9 @@ data class TrackTags(val genre: String?, val year: Int?)
  *    artist so one prolific artist can't fill the list; if that runs short, the capped
  *    tracks fill the rest.
  * 4. [SmartShuffle.spread] so neighbours don't share an artist or album.
+ *
+ * For an AI request, 1–2 make a shortlist instead ([songsForAi]), the AI ranks it
+ * ([SongPickPrompt]), and 3–4 run over the AI's ranking ([fill]).
  */
 object PlaylistMatcher {
     private const val MINUTE_MS = 60_000L
@@ -75,22 +78,47 @@ object PlaylistMatcher {
     ): List<Track> {
         val candidates = library.filter { criteria.matches(it.genre, it.year) }
         if (candidates.isEmpty()) return emptyList()
+        return fill(draw(candidates, criteria, statsByKey, keyOf, nowMs, random), criteria.length)
+    }
 
-        val drawn = candidates
-            .map { track ->
-                val w = if (criteria.leanOnHistory) {
-                    SmartShuffle.weight(statsByKey[keyOf(track)], historyRules, nowMs)
-                } else {
-                    1.0
-                }
-                // nextDouble() can return 0.0; ln(0) would tie everything at -inf.
-                val u = random.nextDouble().coerceAtLeast(Double.MIN_VALUE)
-                track to ln(u) / w
-            }
-            .sortedByDescending { it.second }
-            .map { it.first }
+    /**
+     * The shortlist the AI picks from ([SongPickPrompt]), at most [size] songs: tracks
+     * matching the filters first, in the same weighted draw as [pick] — so each request
+     * and Remix sees a different slice of a big match — then tracks only missing a tag
+     * the filters ask about ([PlaylistCriteria.mightMatch]): the AI knows the song even
+     * when the file doesn't say.
+     */
+    fun songsForAi(
+        library: List<Track>,
+        criteria: PlaylistCriteria,
+        statsByKey: Map<Long, TrackStats>,
+        keyOf: (Track) -> Long,
+        nowMs: Long,
+        size: Int,
+        random: Random = Random.Default,
+    ): List<Track> {
+        val (matching, rest) = library.partition { criteria.matches(it.genre, it.year) }
+        val untagged = rest.filter { criteria.mightMatch(it.genre, it.year) }
+        return (draw(matching, criteria, statsByKey, keyOf, nowMs, random) +
+            draw(untagged, criteria, statsByKey, keyOf, nowMs, random)).take(size)
+    }
 
-        val target = Target.of(criteria.length)
+    /** About how many tracks [length] takes, judged from [songs]' own lengths. */
+    fun expectedCount(length: PlaylistLength, songs: List<Track>): Int {
+        val target = Target.of(length)
+        if (target.tracks != null) return target.tracks
+        val typical = songs.map { it.durationMs }.filter { it > 0 }.sorted()
+            .let { if (it.isEmpty()) TYPICAL_TRACK_MS else it[it.size / 2] }
+        return (target.durationMs!! / typical).toInt().coerceAtLeast(1)
+    }
+
+    /**
+     * Takes [ranked] in order until [length] is reached, at most [artistCap] per artist
+     * so one prolific artist can't fill the list; if that runs short, the capped tracks
+     * fill the rest. Then spreads it out so neighbours don't share an artist or album.
+     */
+    fun fill(ranked: List<Track>, length: PlaylistLength): List<Track> {
+        val target = Target.of(length)
         val cap = artistCap(target)
         val picked = mutableListOf<Track>()
         val held = mutableListOf<Track>()
@@ -98,7 +126,7 @@ object PlaylistMatcher {
         var totalMs = 0L
         fun done() = target.isMet(picked.size, totalMs)
 
-        for (track in drawn) {
+        for (track in ranked) {
             if (done()) break
             if ((perArtist[track.artistId] ?: 0) >= cap) {
                 held += track
@@ -115,6 +143,28 @@ object PlaylistMatcher {
         }
         return spreadOut(picked)
     }
+
+    /** Weighted random order (Efraimidis–Spirakis), by listening history when asked. */
+    private fun draw(
+        tracks: List<Track>,
+        criteria: PlaylistCriteria,
+        statsByKey: Map<Long, TrackStats>,
+        keyOf: (Track) -> Long,
+        nowMs: Long,
+        random: Random,
+    ): List<Track> = tracks
+        .map { track ->
+            val w = if (criteria.leanOnHistory) {
+                SmartShuffle.weight(statsByKey[keyOf(track)], historyRules, nowMs)
+            } else {
+                1.0
+            }
+            // nextDouble() can return 0.0; ln(0) would tie everything at -inf.
+            val u = random.nextDouble().coerceAtLeast(Double.MIN_VALUE)
+            track to ln(u) / w
+        }
+        .sortedByDescending { it.second }
+        .map { it.first }
 
     /** At most a fifth of the playlist from one artist, but never fewer than 2. */
     internal fun artistCap(target: Target): Int {
@@ -134,11 +184,9 @@ object PlaylistMatcher {
             if (tracks != null) count >= tracks else totalMs >= durationMs!! - DURATION_SLACK_MS
 
         companion object {
-            fun of(length: PlaylistLength) = when (length) {
-                PlaylistLength.TWENTY_TRACKS -> Target(tracks = 20, durationMs = null)
-                PlaylistLength.ONE_HOUR -> Target(tracks = null, durationMs = 60 * MINUTE_MS)
-                PlaylistLength.TWO_HOURS -> Target(tracks = null, durationMs = 120 * MINUTE_MS)
-            }
+            fun of(length: PlaylistLength) =
+                if (length.byTime) Target(tracks = null, durationMs = length.amount * MINUTE_MS)
+                else Target(tracks = length.amount, durationMs = null)
         }
     }
 }
