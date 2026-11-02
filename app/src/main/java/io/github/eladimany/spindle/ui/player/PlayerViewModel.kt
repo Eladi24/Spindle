@@ -12,6 +12,9 @@ import io.github.eladimany.spindle.data.library.toDomain
 import io.github.eladimany.spindle.data.prefs.SettingsRepository
 import io.github.eladimany.spindle.di.IoDispatcher
 import io.github.eladimany.spindle.playback.AudioOutputSwitcher
+import io.github.eladimany.spindle.playback.LocalAudioRoutes
+import io.github.eladimany.spindle.playback.LocalOutput
+import io.github.eladimany.spindle.playback.LocalRouteKind
 import io.github.eladimany.spindle.playback.MoreLikeThis
 import io.github.eladimany.spindle.playback.OutputTarget
 import io.github.eladimany.spindle.playback.PlaybackController
@@ -23,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +43,8 @@ class PlayerViewModel @Inject constructor(
     private val trackDao: TrackDao,
     @IoDispatcher private val ioDispatcher: CoroutineDispatcher,
     audioOutputSwitcher: AudioOutputSwitcher,
+    localOutput: LocalOutput,
+    localAudioRoutes: LocalAudioRoutes,
 ) : ViewModel() {
 
     val playbackState: StateFlow<PlaybackState> = controller.playbackState
@@ -48,6 +54,13 @@ class PlayerViewModel @Inject constructor(
     // PlaybackController itself never does (see its own doc comment) — so this reads
     // AudioOutputSwitcher directly rather than routing "current target" through it.
     val outputTarget: StateFlow<OutputTarget> = audioOutputSwitcher.target
+
+    /** "This phone", or the device it plays through ("Galaxy Buds", "Android Auto"). */
+    val localOutputName: StateFlow<String> = localOutput.activeRoute
+        .map { route ->
+            if (route == null || route.kind == LocalRouteKind.SPEAKER) "This phone" else localAudioRoutes.displayName(route)
+        }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "This phone")
 
     fun togglePlayPause() = controller.togglePlayPause()
     fun next() = controller.next()

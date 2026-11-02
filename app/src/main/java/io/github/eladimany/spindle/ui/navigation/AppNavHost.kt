@@ -106,6 +106,7 @@ fun AppNavHost() {
     val playbackState by playerViewModel.playbackState.collectAsStateWithLifecycle()
     val queueState by playerViewModel.queueState.collectAsStateWithLifecycle()
     val outputTarget by playerViewModel.outputTarget.collectAsStateWithLifecycle()
+    val localOutputName by playerViewModel.localOutputName.collectAsStateWithLifecycle()
     // Something to show in the player: a loaded track, or a queue that has played out.
     val hasPlayer = playbackState.let {
         it is PlaybackState.Playing || it is PlaybackState.Paused || it is PlaybackState.Buffering
@@ -126,9 +127,9 @@ fun AppNavHost() {
     var showOutputPicker by remember { mutableStateOf(false) }
     if (showOutputPicker) OutputPickerSheet(onDismiss = { showOutputPicker = false })
     // A static local: a new value recomposes every tab's title bar, so only on a real change.
-    val outputChip = remember(outputTarget) {
+    val outputChip = remember(outputTarget, localOutputName) {
         OutputChipState(
-            name = outputTarget.displayName(),
+            name = outputTarget.displayName(localOutputName),
             isNode = outputTarget is OutputTarget.Node,
             onClick = { showOutputPicker = true },
         )
@@ -343,7 +344,7 @@ fun AppNavHost() {
                         fetchArtworkUri = playerViewModel::artworkUriFor,
                         nextTrack = nextTrack,
                         previousTrack = previousTrack,
-                        outputName = outputTarget.displayName(),
+                        outputName = outputTarget.displayName(localOutputName),
                         outputIsNode = outputTarget is OutputTarget.Node,
                         onOpenOutputPicker = { showOutputPicker = true },
                         finished = queueState.finished,

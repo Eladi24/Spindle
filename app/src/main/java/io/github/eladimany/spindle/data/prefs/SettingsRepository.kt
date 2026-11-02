@@ -79,6 +79,24 @@ class SettingsRepository @Inject constructor(
         }
     }
 
+    // "N albums have no cover" on Albums: hidden at that N; shows again only if more appear.
+    private val coverNoticeDismissedKey = intPreferencesKey("cover_notice_dismissed_at")
+
+    val coverNoticeDismissedAt: Flow<Int> = context.dataStore.data.map { prefs -> prefs[coverNoticeDismissedKey] ?: 0 }
+
+    suspend fun dismissCoverNotice(count: Int) {
+        context.dataStore.edit { prefs -> prefs[coverNoticeDismissedKey] = count }
+    }
+
+    // Albums tab: grid, or flipping through covers (cover flow upright, record crate sideways).
+    private val albumsFlowViewKey = booleanPreferencesKey("albums_flow_view")
+
+    val albumsFlowView: Flow<Boolean> = context.dataStore.data.map { prefs -> prefs[albumsFlowViewKey] ?: false }
+
+    suspend fun setAlbumsFlowView(flow: Boolean) {
+        context.dataStore.edit { prefs -> prefs[albumsFlowViewKey] = flow }
+    }
+
     // "N tracks have no artist" on Tracks: dismissed at that N; shows again only if more appear.
     private val trackInfoNoticeDismissedKey = intPreferencesKey("track_info_notice_dismissed_at")
 

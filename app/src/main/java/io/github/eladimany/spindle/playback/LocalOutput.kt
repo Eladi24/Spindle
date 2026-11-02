@@ -17,9 +17,15 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.eladimany.spindle.core.model.OutputCapabilities
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.QueueItem
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.roundToInt
@@ -36,6 +42,7 @@ import kotlin.math.roundToInt
 @Singleton
 class LocalOutput @Inject constructor(
     private val player: ExoPlayer,
+    private val routes: LocalAudioRoutes,
     @ApplicationContext private val context: Context,
 ) : AudioOutput {
 
@@ -49,15 +56,26 @@ class LocalOutput @Inject constructor(
 
     override val capabilities = OutputCapabilities(canSeek = true, canSetVolume = true, isGapless = true)
 
-    // null = automatic (Android's own routing — follows a connected Bluetooth
-    // device when one exists). Set via the output picker's "This phone" sub-routes.
+    // null = automatic (Android's own routing — follows a connected Bluetooth device,
+    // a car, Android Auto). Pinned only when the user picks a device in the Play on
+    // sheet that Android wouldn't pick by itself, e.g. the speaker with earbuds on.
     private val _preferredRouteId = MutableStateFlow<Int?>(null)
     val preferredRouteId: StateFlow<Int?> = _preferredRouteId.asStateFlow()
+
+    /**
+     * Where sound really comes out: the pinned device while it's connected, else
+     * Android's own route. The picker's ACTIVE row and the output pill read this.
+     */
+    val activeRoute: StateFlow<LocalRoute?> =
+        combine(_preferredRouteId, routes.routes, routes.androidRoute) { pinned, listed, android ->
+            listed.firstOrNull { it.id == pinned } ?: android
+        }.stateIn(CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate), SharingStarted.Eagerly, null)
 
     /** [route] null clears the pin and returns to Android's automatic routing. */
     fun setPreferredRoute(route: LocalRoute?) {
         player.setPreferredAudioDevice(route?.device)
         _preferredRouteId.value = route?.id
+        routes.refresh()
     }
 
     private var currentItem: QueueItem? = null
@@ -122,10 +140,16 @@ class LocalOutput @Inject constructor(
             player.playbackState == Player.STATE_ENDED -> PlaybackState.Ended(item)
             player.playbackState == Player.STATE_BUFFERING -> PlaybackState.Buffering(item)
             player.playbackState == Player.STATE_IDLE -> PlaybackState.Idle
-            player.isPlaying -> PlaybackState.Playing(item, player.currentPosition, player.duration.coerceAtLeast(0))
-            else -> PlaybackState.Paused(item, player.currentPosition, player.duration.coerceAtLeast(0))
+            player.isPlaying -> PlaybackState.Playing(item, player.currentPosition, durationOf(item))
+            else -> PlaybackState.Paused(item, player.currentPosition, durationOf(item))
         }
     }
+
+    // Just after a new song starts ExoPlayer doesn't know its length yet (TIME_UNSET). A 0
+    // here made the seek bar and mini-player progress read "all the way through" for a
+    // moment on every song change; the library's length stands in until ExoPlayer has one.
+    private fun durationOf(item: QueueItem): Long =
+        player.duration.takeIf { it > 0 } ?: item.track.durationMs.coerceAtLeast(0)
 
     override suspend fun play(item: QueueItem) {
         currentItem = item

@@ -6,7 +6,10 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.data.covers.AlbumCoverFinder
+import io.github.eladimany.spindle.data.covers.CoverCandidate
 import io.github.eladimany.spindle.data.library.ArtworkRepository
+import io.github.eladimany.spindle.data.library.ArtworkRevision
 import io.github.eladimany.spindle.data.library.LibraryRepository
 import io.github.eladimany.spindle.playback.PlaybackController
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.IOException
 import javax.inject.Inject
 
 @HiltViewModel
@@ -23,6 +27,7 @@ class AlbumDetailViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
     private val artworkRepository: ArtworkRepository,
     private val playbackController: PlaybackController,
+    private val coverFinder: AlbumCoverFinder,
 ) : ViewModel() {
 
     private val albumId: Long = checkNotNull(savedStateHandle["albumId"])
@@ -35,10 +40,70 @@ class AlbumDetailViewModel @Inject constructor(
 
     val currentTrackId: StateFlow<Long?> = playbackController.currentTrackId
 
+    /** Null until known; false shows "Find cover" (mockup 9A). Re-checked when a cover is saved. */
+    private val _hasCover = MutableStateFlow<Boolean?>(null)
+    val hasCover: StateFlow<Boolean?> = _hasCover.asStateFlow()
+
+    sealed interface CoverLookup {
+        data object Idle : CoverLookup
+        data object Searching : CoverLookup
+        data class Showing(val candidates: List<CoverCandidate>, val index: Int, val saving: Boolean = false, val error: String? = null) : CoverLookup
+        data class Failed(val message: String) : CoverLookup
+    }
+
+    private val _coverLookup = MutableStateFlow<CoverLookup>(CoverLookup.Idle)
+    val coverLookup: StateFlow<CoverLookup> = _coverLookup.asStateFlow()
+
     init {
         viewModelScope.launch {
             _album.value = libraryRepository.albumById(albumId)
         }
+        viewModelScope.launch {
+            ArtworkRevision.value.collect {
+                val album = _album.value ?: libraryRepository.albumById(albumId) ?: return@collect
+                _hasCover.value = artworkRepository.artworkUriForAlbum(album) != null
+            }
+        }
+    }
+
+    fun findCover() {
+        val album = _album.value ?: return
+        _coverLookup.value = CoverLookup.Searching
+        viewModelScope.launch {
+            _coverLookup.value = try {
+                val found = coverFinder.candidates(album)
+                if (found.isEmpty()) CoverLookup.Failed("Deezer has no cover for this album") else CoverLookup.Showing(found, 0)
+            } catch (e: IOException) {
+                CoverLookup.Failed("Couldn't reach Deezer — check the connection")
+            }
+        }
+    }
+
+    fun useShownCover() {
+        val album = _album.value ?: return
+        val showing = _coverLookup.value as? CoverLookup.Showing ?: return
+        _coverLookup.value = showing.copy(saving = true, error = null)
+        viewModelScope.launch {
+            try {
+                coverFinder.use(album, showing.candidates[showing.index])
+                _coverLookup.value = CoverLookup.Idle
+            } catch (e: IOException) {
+                _coverLookup.value = showing.copy(saving = false, error = "Couldn't download it — try again")
+            }
+        }
+    }
+
+    fun notThisCover() {
+        val showing = _coverLookup.value as? CoverLookup.Showing ?: return
+        _coverLookup.value = if (showing.index + 1 < showing.candidates.size) {
+            showing.copy(index = showing.index + 1, error = null)
+        } else {
+            CoverLookup.Failed("No other match on Deezer")
+        }
+    }
+
+    fun closeCoverLookup() {
+        _coverLookup.value = CoverLookup.Idle
     }
 
     fun playTrack(track: Track) {

@@ -16,6 +16,8 @@ import io.github.eladimany.spindle.data.prefs.BatteryGuidance
 import io.github.eladimany.spindle.data.prefs.SettingsRepository
 import io.github.eladimany.spindle.playback.AudioOutputSwitcher
 import io.github.eladimany.spindle.playback.LocalAudioRoutes
+import io.github.eladimany.spindle.playback.PairedAudioDevice
+import io.github.eladimany.spindle.playback.PairedBluetoothDevices
 import io.github.eladimany.spindle.playback.LocalOutput
 import io.github.eladimany.spindle.playback.LocalRoute
 import io.github.eladimany.spindle.playback.LocalRouteKind
@@ -39,6 +41,7 @@ class OutputPickerViewModel @Inject constructor(
     private val switcher: AudioOutputSwitcher,
     private val localOutput: LocalOutput,
     private val localAudioRoutes: LocalAudioRoutes,
+    private val pairedBluetooth: PairedBluetoothDevices,
     private val batteryGuidance: BatteryGuidance,
     private val settings: SettingsRepository,
     @ApplicationContext private val context: Context,
@@ -49,7 +52,22 @@ class OutputPickerViewModel @Inject constructor(
     // "This phone" sub-routes — only meaningful when target == Local; see LocalAudioRoutes.
     val localRoutes: StateFlow<List<LocalRoute>> = localAudioRoutes.routes
     val preferredRouteId: StateFlow<Int?> = localOutput.preferredRouteId
+    /** Where "This phone" really plays right now — see [LocalOutput.activeRoute]. */
+    val activeRoute: StateFlow<LocalRoute?> = localOutput.activeRoute
     fun routeDisplayName(route: LocalRoute): String = localAudioRoutes.displayName(route)
+
+    // BLUETOOTH section: paired audio devices; the sheet shows those not connected now.
+    private val _pairedDevices = MutableStateFlow<List<PairedAudioDevice>>(emptyList())
+    val pairedDevices: StateFlow<List<PairedAudioDevice>> = _pairedDevices.asStateFlow()
+
+    fun refreshBluetooth() {
+        _pairedDevices.value = pairedBluetooth.audioDevices()
+    }
+
+    /** A paired device that isn't connected: Android's output switcher connects it. */
+    fun connectBluetooth() = pairedBluetooth.openOutputSwitcher()
+
+    fun pairNewBluetooth() = pairedBluetooth.openBluetoothSettings()
 
     private val _players = MutableStateFlow<List<BluOsPlayer>>(emptyList())
     val players: StateFlow<List<BluOsPlayer>> = _players.asStateFlow()
@@ -118,6 +136,7 @@ class OutputPickerViewModel @Inject constructor(
      * when the sheet closes. Players found stay listed after the search ends.
      */
     fun startDiscovery() {
+        localAudioRoutes.refresh()
         if (discoveryJob?.isActive == true) return
         _players.value = emptyList()
         _isScanning.value = true
@@ -144,13 +163,20 @@ class OutputPickerViewModel @Inject constructor(
     }
 
     /**
-     * "This phone" means the built-in speaker, explicitly — not Android's
-     * automatic routing, which prefers a connected Bluetooth device and
-     * would otherwise make this card meaningless whenever one's connected.
+     * "This phone" = the built-in speaker. Pinned only when Android would route
+     * elsewhere (earbuds, a car); otherwise the pin stays clear, so whatever connects
+     * later takes over by itself.
      */
     fun selectLocal() {
+        localAudioRoutes.refresh()
+        val android = localAudioRoutes.androidRoute.value
         val speaker = localAudioRoutes.routes.value.firstOrNull { it.kind == LocalRouteKind.SPEAKER }
-        selectLocalRoute(speaker)
+        selectLocalRoute(if (android == null || android.kind == LocalRouteKind.SPEAKER) null else speaker)
+    }
+
+    /** A Bluetooth/wired row: pinned unless it's already where Android plays. */
+    fun selectDevice(route: LocalRoute) {
+        selectLocalRoute(if (localAudioRoutes.androidRoute.value?.id == route.id) null else route)
     }
 
     /** [route] null clears any pinned device and returns to Android's automatic routing. */

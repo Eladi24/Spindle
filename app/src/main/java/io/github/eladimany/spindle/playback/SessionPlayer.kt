@@ -1,6 +1,8 @@
 package io.github.eladimany.spindle.playback
 
+import android.content.Context
 import android.os.Looper
+import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -9,6 +11,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import io.github.eladimany.spindle.core.model.PlaybackState
 import io.github.eladimany.spindle.core.model.elapsedMs
+import io.github.eladimany.spindle.playback.auto.ArtworkProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,10 +31,20 @@ import kotlinx.coroutines.launch
  * Reporting "playing" keeps the foreground service treated as active media playback.
  */
 class SessionPlayer(
+    private val context: Context,
     private val controller: PlaybackController,
 ) : SimpleBasePlayer(Looper.getMainLooper()) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    // Android Auto picking a song: PlaybackService's callback already started it, then
+    // Media3 calls setMediaItems + prepare + play here. That play would land while the
+    // new song is still loading and toggle it off (or replay the old queue), so ignore it.
+    private var ignorePlayUntilMs = 0L
+
+    fun startedByBrowser() {
+        ignorePlayUntilMs = SystemClock.elapsedRealtime() + 2_000
+    }
 
     init {
         scope.launch {
@@ -65,6 +78,7 @@ class SessionPlayer(
                     .setTitle(track.title)
                     .setArtist(track.artistName)
                     .setAlbumTitle(track.albumName)
+                    .setArtworkUri(ArtworkProvider.albumUri(context, track.albumId))
                     .build(),
             )
             .build()
@@ -86,6 +100,7 @@ class SessionPlayer(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        if (playWhenReady && SystemClock.elapsedRealtime() < ignorePlayUntilMs) return Futures.immediateVoidFuture()
         val playing = when (controller.playbackState.value) {
             is PlaybackState.Playing, is PlaybackState.Buffering -> true
             else -> false
@@ -94,6 +109,12 @@ class SessionPlayer(
         if (playWhenReady != playing) controller.togglePlayPause()
         return Futures.immediateVoidFuture()
     }
+
+    // What to play was handled in PlaybackService's onSetMediaItems; nothing left to do.
+    override fun handleSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): ListenableFuture<*> =
+        Futures.immediateVoidFuture()
+
+    override fun handlePrepare(): ListenableFuture<*> = Futures.immediateVoidFuture()
 
     override fun handleStop(): ListenableFuture<*> {
         if (controller.playbackState.value is PlaybackState.Playing) controller.togglePlayPause()
@@ -120,6 +141,9 @@ class SessionPlayer(
         val COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(
                 Player.COMMAND_PLAY_PAUSE,
+                Player.COMMAND_PREPARE,
+                Player.COMMAND_SET_MEDIA_ITEM,
+                Player.COMMAND_CHANGE_MEDIA_ITEMS,
                 Player.COMMAND_STOP,
                 Player.COMMAND_SEEK_TO_NEXT,
                 Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,

@@ -49,6 +49,7 @@
         android:theme="@style/Theme.Spindle">
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.Spindle"
@@ -60,14 +61,29 @@
             </intent-filter>
         </activity>
 
+        <!-- Exported so Android Auto (and other media controllers) can browse and control
+             it — the standard for media apps. MediaBrowserService is what Auto binds to. -->
         <service
             android:name=".playback.PlaybackService"
-            android:exported="false"
+            android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
+                <action android:name="androidx.media3.session.MediaLibraryService" />
                 <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+
+        <!-- Album covers for Android Auto; read access is granted per connecting app. -->
+        <provider
+            android:name=".playback.auto.ArtworkProvider"
+            android:authorities="${applicationId}.artwork"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
     </application>
 
 </manifest>

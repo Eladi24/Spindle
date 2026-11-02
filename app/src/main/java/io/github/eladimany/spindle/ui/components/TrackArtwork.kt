@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
@@ -18,6 +19,7 @@ import androidx.compose.ui.layout.ContentScale
 import coil3.compose.AsyncImage
 import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Track
+import io.github.eladimany.spindle.data.library.ArtworkRevision
 
 /**
  * Album artwork, extracted lazily and cached — see [ArtworkRepository][
@@ -61,7 +63,9 @@ private fun ArtworkBox(
     modifier: Modifier,
     cornerRadiusDp: Int,
 ) {
-    val artworkUri by produceState<String?>(initialValue = null, key) {
+    // A cover found or dropped by hand loads again everywhere it's shown.
+    val revision by ArtworkRevision.value.collectAsState()
+    val artworkUri by produceState<String?>(initialValue = null, key, revision) {
         value = fetchUri()
     }
 

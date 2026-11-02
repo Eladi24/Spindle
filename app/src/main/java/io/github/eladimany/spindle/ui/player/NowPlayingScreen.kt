@@ -2,6 +2,21 @@ package io.github.eladimany.spindle.ui.player
 
 import android.os.VibrationEffect
 import android.os.Vibrator
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PageSize
+import androidx.compose.foundation.pager.PagerState
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import kotlin.math.abs
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -64,7 +79,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -97,14 +111,11 @@ import io.github.eladimany.spindle.ui.playlists.AddToPlaylistSheet
 import io.github.eladimany.spindle.ui.shuffle.SmartShuffleSheet
 import kotlinx.coroutines.delay
 
-// The hero backdrop is intentionally always this dark violet gradient, independent of
-// the app's light/dark theme — same idea as Spotify/Apple Music's player screen having
-// its own fixed identity rather than following the surrounding UI. Approximates "color
-// derived from the album art" with a fixed gradient; real per-track extraction (e.g.
-// androidx.palette) is a possible follow-up, not done here — see the UI refresh concepts.
-private val HeroBackdrop = Brush.linearGradient(
-    colors = listOf(Color(0xFF1B1730), Color(0xFF3A2F7A), Color(0xFF6C5CE0)),
-)
+// "Ambient light" (mockup 5C, 2026-11-02): near-black, lit by two soft glows in the
+// cover's own colours (CoverPalette), whatever the app's light/dark theme — the player
+// keeps its own identity, like Spotify/Apple Music's. Violet/teal while a cover loads
+// or when there's none.
+private val AmbientBase = Color(0xFF09080E)
 private val HeroOnBackdrop = Color.White
 private val HeroOnBackdropMuted = Color.White.copy(alpha = 0.7f)
 private val HeroOnBackdropFaint = Color.White.copy(alpha = 0.55f)
@@ -112,6 +123,13 @@ private val HeroTrackColor = Color.White.copy(alpha = 0.22f)
 private val HeroAccent = Color(0xFFC9C4FF)
 private val HeroBlobViolet = Color(0xFF8B7CF6)
 private val HeroBlobTeal = Color(0xFF2AA7A0)
+
+// Shuffle/repeat (mockup 4C): off is a dim icon; on is lavender with a glow and a dot
+// under it; smart shuffle is pink with a sparkle. Fixed colours, not the cover's, so
+// "on" always looks the same.
+private val ModeOff = Color.White.copy(alpha = 0.42f)
+private val ModeOn = Color(0xFFC3BFFF)
+private val ModeSmart = Color(0xFFFF8AD8)
 
 @Composable
 fun NowPlayingScreen(
@@ -179,12 +197,13 @@ fun NowPlayingScreen(
         is PlaybackState.Playing -> s.durationMs
         is PlaybackState.Paused -> s.durationMs
         else -> 0L
-    }
+    }.takeIf { it > 0 } ?: item.track.durationMs
 
     var displayPositionMs by remember { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
     var showAddToPlaylist by remember { mutableStateOf(false) }
     val outputTarget by viewModel.outputTarget.collectAsStateWithLifecycle()
+    val localOutputName by viewModel.localOutputName.collectAsStateWithLifecycle()
 
     LaunchedEffect(playbackState) {
         val playing = playbackState as? PlaybackState.Playing
@@ -202,26 +221,46 @@ fun NowPlayingScreen(
             if (paused != null) displayPositionMs = paused.positionMs.toFloat()
         }
     }
+    // A new song starts the bar at 0, not where the last song was, while it loads.
+    LaunchedEffect(item.id) {
+        if (!isDragging) displayPositionMs = 0f
+    }
 
-    Box(modifier = modifier.fillMaxSize().background(HeroBackdrop)) {
-        // Decorative blurred color blobs — purely atmospheric, same shape as the
-        // approved mockup's faux-blurred-album-art backdrop.
-        Box(
-            modifier = Modifier
-                .offset(x = 210.dp, y = (-90).dp)
-                .size(320.dp)
-                .clip(CircleShape)
-                .background(HeroBlobViolet.copy(alpha = 0.55f))
-                .blur(90.dp),
-        )
-        Box(
-            modifier = Modifier
-                .offset(x = (-90).dp, y = 620.dp)
-                .size(300.dp)
-                .clip(CircleShape)
-                .background(HeroBlobTeal.copy(alpha = 0.3f))
-                .blur(100.dp),
-        )
+    val palette = rememberCoverPalette(item.track, viewModel::artworkUriFor)
+    val glowPrimary by animateColorAsState(palette?.let { Color(it.primary) } ?: HeroBlobViolet, tween(600), label = "glowPrimary")
+    val glowSecondary by animateColorAsState(palette?.let { Color(it.secondary) } ?: HeroBlobTeal, tween(600), label = "glowSecondary")
+    val accent by animateColorAsState(palette?.let { Color(it.accent) } ?: HeroAccent, tween(600), label = "accent")
+
+    // 6B: the queue as a row of covers — swipe to the next/previous song.
+    val items = queueState.items
+    val pagerState = rememberPagerState(initialPage = queueState.currentIndex.coerceAtLeast(0)) { items.size }
+    val context = LocalContext.current
+    val vibrator = remember { context.getSystemService(Vibrator::class.java) }
+    val latestQueue by rememberUpdatedState(queueState)
+    var userSwiped by remember { mutableStateOf(false) }
+    LaunchedEffect(pagerState) {
+        pagerState.interactionSource.interactions.collect { if (it is DragInteraction.Start) userSwiped = true }
+    }
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            val queue = latestQueue
+            if (!userSwiped || page == queue.currentIndex || page !in queue.items.indices) return@collect
+            userSwiped = false
+            vibrator?.vibrate(VibrationEffect.createOneShot(25, 170))
+            // Swiping back plays that song from its start — not "previous", which restarts
+            // the current song past 5 s.
+            if (page == queue.currentIndex + 1) viewModel.next() else viewModel.jumpTo(queue.items[page].id)
+        }
+    }
+    // The song changed some other way (buttons, lock screen, end of track): follow it.
+    LaunchedEffect(queueState.currentIndex, items.size) {
+        val target = queueState.currentIndex
+        if (target !in items.indices || pagerState.isScrollInProgress || pagerState.currentPage == target) return@LaunchedEffect
+        if (abs(target - pagerState.currentPage) > 3) pagerState.scrollToPage(target) else pagerState.animateScrollToPage(target)
+    }
+
+    Box(modifier = modifier.fillMaxSize()) {
+        AmbientBackdrop(glowPrimary, glowSecondary)
 
         Column(
             modifier = Modifier
@@ -244,7 +283,6 @@ fun NowPlayingScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
                         .clickable { showOutputPicker = true }
-                        .background(HeroOnBackdrop.copy(alpha = 0.10f))
                         .padding(horizontal = 14.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(5.dp),
@@ -253,11 +291,13 @@ fun NowPlayingScreen(
                         Text(
                             "PLAYING ON",
                             style = MaterialTheme.typography.labelSmall,
+                            letterSpacing = 1.2.sp,
                             color = HeroOnBackdropFaint,
                         )
                         Text(
-                            outputTarget.displayName(),
+                            outputTarget.displayName(localOutputName),
                             style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
                             color = HeroOnBackdrop,
                         )
                     }
@@ -282,52 +322,78 @@ fun NowPlayingScreen(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentAlignment = Alignment.Center,
             ) {
-                // fillMaxWidth(fraction) alone sized this off screen WIDTH, which is the
-                // long edge in landscape — the artwork blew up past the screen and
-                // overlapped the controls (found rotating the screen on-device). Cap it by
-                // whichever dimension is actually smaller here instead. Still not enough on
-                // its own in a short landscape window — the leftover space after a
-                // reasonably-sized art square can be too short for title+artist too, and
-                // Column doesn't clip, so that text was rendering *behind* the slider below
-                // it rather than actually overlapping visibly. verticalScroll on this block
-                // is the actual fix: title/artist scroll into view there instead of ever
-                // being silently hidden.
-                val artSize = minOf(maxWidth, maxHeight) * 0.6f
+                // Sized off the smaller dimension (landscape: the width is the long edge), and
+                // scrollable so title/artist never hide behind the slider in a short window.
+                val artSize = minOf(maxWidth, maxHeight) * 0.62f
+                // The covers run to the screen edges, past this column's 24 dp padding.
+                val rowWidth = maxWidth + 48.dp
 
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    TrackArtwork(
-                        track = item.track,
-                        fetchArtworkUri = viewModel::artworkUriFor,
-                        modifier = Modifier.size(artSize),
-                        cornerRadiusDp = 28,
-                    )
+                    HorizontalPager(
+                        state = pagerState,
+                        // Room above and below for the cover's glow: the pager clips its content,
+                        // and a tight fit cut the glow off in a straight line (A73).
+                        modifier = Modifier.requiredWidth(rowWidth).height(artSize + 56.dp),
+                        pageSize = PageSize.Fixed(artSize),
+                        contentPadding = PaddingValues(horizontal = (rowWidth - artSize) / 2, vertical = 28.dp),
+                        pageSpacing = 18.dp,
+                        beyondViewportPageCount = 1,
+                    ) { page ->
+                        val track = items.getOrNull(page)?.track ?: return@HorizontalPager
+                        TrackArtwork(
+                            track = track,
+                            fetchArtworkUri = viewModel::artworkUriFor,
+                            modifier = Modifier
+                                .size(artSize)
+                                .graphicsLayer {
+                                    val away = pagerState.awayFrom(page)
+                                    val scale = 1f - 0.18f * away
+                                    scaleX = scale
+                                    scaleY = scale
+                                    alpha = 1f - 0.55f * away
+                                    // The glow belongs to the centre cover only: a separate
+                                    // shadow modifier on a faded cover left a hard edge (A73).
+                                    shadowElevation = 36.dp.toPx() * (1f - away)
+                                    shape = RoundedCornerShape(18.dp)
+                                    ambientShadowColor = glowPrimary
+                                    spotShadowColor = glowPrimary
+                                },
+                            cornerRadiusDp = 18,
+                        )
+                    }
 
+                    // The title follows the cover under the finger, fading through the swipe.
+                    val shownTrack = items.getOrNull(pagerState.currentPage)?.track ?: item.track
                     Column(
-                    modifier = Modifier.padding(top = 16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    Text(
-                        item.track.title,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = HeroOnBackdrop,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    )
-                    Text(
-                        item.track.artistName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = HeroOnBackdropMuted,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                        modifier = Modifier
+                            .graphicsLayer { alpha = 1f - (abs(pagerState.currentPageOffsetFraction) * 1.6f).coerceAtMost(0.75f) },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(
+                            shownTrack.title,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = HeroOnBackdrop,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                        Text(
+                            shownTrack.artistName,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = HeroOnBackdropMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     val boosted = trackKey(item.track) in boostedKeys
                     BoostPill(
                         boosted = boosted,
+                        accent = accent,
                         onClick = {
                             viewModel.toggleBoost(item.track)
                             boostHint = if (boosted) "Boost removed" else "Comes up sooner in your next smart shuffle"
@@ -337,7 +403,7 @@ fun NowPlayingScreen(
                     Text(
                         boostHint.orEmpty(),
                         style = MaterialTheme.typography.labelSmall,
-                        color = HeroAccent,
+                        color = accent,
                         maxLines = 1,
                         modifier = Modifier.padding(top = 4.dp),
                     )
@@ -348,7 +414,6 @@ fun NowPlayingScreen(
                             color = HeroOnBackdropFaint,
                             modifier = Modifier.padding(top = 6.dp),
                         )
-                    }
                     }
                 }
             }
@@ -367,12 +432,13 @@ fun NowPlayingScreen(
                         isDragging = false
                         viewModel.seekTo((displayPositionMs / 1000).toInt())
                     },
-                    thumb = { CircleThumb(color = HeroOnBackdrop) },
+                    thumb = { CircleThumb(size = 14.dp, color = HeroOnBackdrop) },
                     track = {
                         ThinTrack(
                             fraction = displayPositionMs / durationMs.coerceAtLeast(1).toFloat(),
-                            activeColor = HeroAccent,
+                            activeColor = accent,
                             inactiveColor = HeroTrackColor,
+                            glow = true,
                         )
                     },
                     colors = heroSliderColors(),
@@ -399,7 +465,7 @@ fun NowPlayingScreen(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 ShuffleModeButton(
@@ -415,15 +481,19 @@ fun NowPlayingScreen(
                     onLongPress = { showSmartShuffleSheet = true },
                 )
                 IconButton(onClick = viewModel::previous, colors = heroIconButtonColors()) {
-                    Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = HeroOnBackdrop, modifier = Modifier.size(30.dp))
+                    Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", tint = HeroOnBackdrop, modifier = Modifier.size(32.dp))
                 }
+                // A glass circle lit by the cover, not a solid disc (mockup 5C).
                 FilledIconButton(
                     onClick = viewModel::togglePlayPause,
-                    modifier = Modifier.size(78.dp),
+                    modifier = Modifier
+                        .size(78.dp)
+                        .glow(glowPrimary.copy(alpha = 0.5f), radius = 26.dp, cornerRadius = 39.dp)
+                        .border(1.dp, HeroOnBackdrop.copy(alpha = 0.22f), CircleShape),
                     shape = CircleShape,
                     colors = IconButtonDefaults.filledIconButtonColors(
-                        containerColor = HeroOnBackdrop,
-                        contentColor = Color(0xFF1B1730),
+                        containerColor = Color(0xFF1A1724),
+                        contentColor = HeroOnBackdrop,
                     ),
                 ) {
                     val isPlaying = playbackState is PlaybackState.Playing
@@ -434,12 +504,9 @@ fun NowPlayingScreen(
                     )
                 }
                 IconButton(onClick = viewModel::next, colors = heroIconButtonColors()) {
-                    Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = HeroOnBackdrop, modifier = Modifier.size(30.dp))
+                    Icon(Icons.Default.SkipNext, contentDescription = "Next", tint = HeroOnBackdrop, modifier = Modifier.size(32.dp))
                 }
-                IconButton(onClick = viewModel::cycleRepeatMode, colors = heroIconButtonColors()) {
-                    val (icon, tint) = repeatIconFor(queueState.repeatMode, active = HeroAccent, inactive = HeroOnBackdropMuted)
-                    Icon(icon, contentDescription = "Repeat", tint = tint)
-                }
+                RepeatModeButton(mode = queueState.repeatMode, onClick = viewModel::cycleRepeatMode)
             }
 
             VolumeRow(volume = volume, onVolumeChange = viewModel::setVolume)
@@ -459,25 +526,20 @@ private fun ShuffleModeButton(
     onClick: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val isSmart = mode == QueueManager.ShuffleMode.SMART
     val description = when (mode) {
         QueueManager.ShuffleMode.OFF -> "Shuffle: off"
         QueueManager.ShuffleMode.SHUFFLE -> "Shuffle: on"
         QueueManager.ShuffleMode.SMART -> "Shuffle: smart"
     }
-    Box(
+    ModeGlyph(
+        icon = Icons.Default.Shuffle,
+        color = when (mode) {
+            QueueManager.ShuffleMode.OFF -> null
+            QueueManager.ShuffleMode.SHUFFLE -> ModeOn
+            QueueManager.ShuffleMode.SMART -> ModeSmart
+        },
+        sparkle = mode == QueueManager.ShuffleMode.SMART,
         modifier = Modifier
-            .size(48.dp)
-            .clip(CircleShape)
-            .then(
-                if (isSmart) {
-                    Modifier
-                        .background(HeroAccent.copy(alpha = 0.12f))
-                        .border(1.dp, HeroAccent.copy(alpha = 0.35f), CircleShape)
-                } else {
-                    Modifier
-                },
-            )
             .combinedClickable(
                 role = Role.Button,
                 onClickLabel = "Change shuffle mode",
@@ -486,37 +548,115 @@ private fun ShuffleModeButton(
                 onClick = onClick,
             )
             .semantics { contentDescription = description },
+    )
+}
+
+/** Off → All → One, drawn like [ShuffleModeButton]. */
+@Composable
+private fun RepeatModeButton(mode: QueueManager.RepeatMode, onClick: () -> Unit) {
+    val description = when (mode) {
+        QueueManager.RepeatMode.OFF -> "Repeat: off"
+        QueueManager.RepeatMode.ALL -> "Repeat: all"
+        QueueManager.RepeatMode.ONE -> "Repeat: one"
+    }
+    ModeGlyph(
+        icon = if (mode == QueueManager.RepeatMode.ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+        color = if (mode == QueueManager.RepeatMode.OFF) null else ModeOn,
+        sparkle = false,
+        modifier = Modifier
+            .clickable(role = Role.Button, onClickLabel = "Change repeat mode", onClick = onClick)
+            .semantics { contentDescription = description },
+    )
+}
+
+/** [color] null = off. On: the icon in [color] over a soft halo, and a glowing dot under it. */
+@Composable
+private fun ModeGlyph(icon: ImageVector, color: Color?, sparkle: Boolean, modifier: Modifier = Modifier) {
+    val tint by animateColorAsState(color ?: ModeOff, tween(160), label = "modeTint")
+    Box(
+        modifier = Modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .then(modifier),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            Icons.Default.Shuffle,
-            contentDescription = null,
-            tint = if (mode == QueueManager.ShuffleMode.OFF) HeroOnBackdropMuted else HeroAccent,
-        )
-        if (isSmart) {
+        if (color != null) {
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .background(Brush.radialGradient(listOf(color.copy(alpha = 0.30f), Color.Transparent)), CircleShape),
+            )
+        }
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(24.dp))
+        if (sparkle) {
             Icon(
                 SparkleIcon,
                 contentDescription = null,
-                tint = HeroOnBackdrop,
+                tint = tint,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 8.dp, end = 9.dp)
+                    .padding(top = 9.dp, end = 9.dp)
                     .size(10.dp),
+            )
+        }
+        if (color != null) {
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 4.dp)
+                    .size(6.dp)
+                    .glow(color, radius = 6.dp, cornerRadius = 3.dp)
+                    .background(color, CircleShape),
             )
         }
     }
 }
 
+/** Near-black with two soft glows in the cover's colours, drawn with radial gradients (no blur API needed). */
+@Composable
+private fun AmbientBackdrop(primary: Color, secondary: Color) {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(AmbientBase)
+            .drawBehind {
+                val w = size.width
+                drawCircle(
+                    Brush.radialGradient(
+                        listOf(primary.copy(alpha = 0.55f), primary.copy(alpha = 0.18f), Color.Transparent),
+                        center = Offset(w * 0.5f, w * 0.62f),
+                        radius = w * 0.85f,
+                    ),
+                    radius = w * 0.85f,
+                    center = Offset(w * 0.5f, w * 0.62f),
+                )
+                drawCircle(
+                    Brush.radialGradient(
+                        listOf(secondary.copy(alpha = 0.32f), Color.Transparent),
+                        center = Offset(w * 0.78f, w * 0.30f),
+                        radius = w * 0.55f,
+                    ),
+                    radius = w * 0.55f,
+                    center = Offset(w * 0.78f, w * 0.30f),
+                )
+            },
+    )
+}
+
+/** How far [page] is from the centre of the row, 0 (centred) to 1 (a neighbour or further). */
+private fun PagerState.awayFrom(page: Int): Float =
+    abs((currentPage - page) + currentPageOffsetFraction).coerceIn(0f, 1f)
+
 /** BOOST under the artist; BOOSTED (filled, glowing) once tapped — for the next smart shuffle. */
 @Composable
-private fun BoostPill(boosted: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun BoostPill(boosted: Boolean, accent: Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = modifier
-            .then(if (boosted) Modifier.glow(HeroAccent.copy(alpha = 0.45f), radius = 12.dp, cornerRadius = 16.dp) else Modifier)
+            .then(if (boosted) Modifier.glow(accent.copy(alpha = 0.45f), radius = 12.dp, cornerRadius = 16.dp) else Modifier)
             .clip(shape)
-            .background(if (boosted) HeroAccent.copy(alpha = 0.28f) else HeroAccent.copy(alpha = 0.08f))
-            .border(1.dp, HeroAccent.copy(alpha = if (boosted) 0.9f else 0.45f), shape)
+            .background(if (boosted) accent.copy(alpha = 0.22f) else accent.copy(alpha = 0.06f))
+            .border(1.dp, accent.copy(alpha = if (boosted) 0.9f else 0.5f), shape)
             .clickable(
                 role = Role.Switch,
                 onClickLabel = if (boosted) "Remove boost" else "Boost",
@@ -528,13 +668,13 @@ private fun BoostPill(boosted: Boolean, onClick: () -> Unit, modifier: Modifier 
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Icon(SparkleIcon, contentDescription = null, tint = if (boosted) HeroOnBackdrop else HeroAccent, modifier = Modifier.size(13.dp))
+        Icon(SparkleIcon, contentDescription = null, tint = if (boosted) HeroOnBackdrop else accent, modifier = Modifier.size(13.dp))
         Text(
             if (boosted) "BOOSTED" else "BOOST",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Bold,
             letterSpacing = 0.6.sp,
-            color = if (boosted) HeroOnBackdrop else HeroAccent,
+            color = if (boosted) HeroOnBackdrop else accent,
         )
     }
 }
@@ -544,15 +684,15 @@ private fun ShuffleModeLabel(text: String, smart: Boolean) {
     val shape = RoundedCornerShape(14.dp)
     Row(
         modifier = Modifier
-            .glow(HeroAccent.copy(alpha = 0.25f), radius = 14.dp, cornerRadius = 14.dp)
+            .glow((if (smart) ModeSmart else ModeOn).copy(alpha = 0.25f), radius = 14.dp, cornerRadius = 14.dp)
             .clip(shape)
             .background(Color(0xD9141228))
-            .border(1.dp, HeroAccent.copy(alpha = 0.35f), shape)
+            .border(1.dp, (if (smart) ModeSmart else ModeOn).copy(alpha = 0.35f), shape)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        if (smart) Icon(SparkleIcon, contentDescription = null, tint = HeroAccent, modifier = Modifier.size(12.dp))
+        if (smart) Icon(SparkleIcon, contentDescription = null, tint = ModeSmart, modifier = Modifier.size(12.dp))
         Text(text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = HeroOnBackdrop)
     }
 }
@@ -562,7 +702,7 @@ private fun heroIconButtonColors() = IconButtonDefaults.iconButtonColors(content
 
 @Composable
 private fun heroSliderColors() = SliderDefaults.colors(
-    activeTrackColor = HeroAccent,
+    activeTrackColor = ModeOn,
     inactiveTrackColor = HeroTrackColor,
 )
 
@@ -664,29 +804,23 @@ private fun CircleThumb(size: Dp = 20.dp, color: Color = MaterialTheme.colorSche
  * built-in track is a much thicker "expressive" pill (~16dp), which read as too fat
  * against the hero mockup's thin progress/volume bars. */
 @Composable
-private fun ThinTrack(fraction: Float, activeColor: Color, inactiveColor: Color) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(4.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(inactiveColor),
-    ) {
+private fun ThinTrack(fraction: Float, activeColor: Color, inactiveColor: Color, glow: Boolean = false) {
+    // Not clipped as a whole, so the played part's glow can spill past the line.
+    Box(modifier = Modifier.fillMaxWidth().height(4.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(2.dp))
+                .background(inactiveColor),
+        )
         Box(
             modifier = Modifier
                 .fillMaxWidth(fraction.coerceIn(0f, 1f))
                 .fillMaxHeight()
+                .then(if (glow) Modifier.glow(activeColor.copy(alpha = 0.8f), radius = 8.dp, cornerRadius = 2.dp) else Modifier)
                 .clip(RoundedCornerShape(2.dp))
                 .background(activeColor),
         )
-    }
-}
-
-private fun repeatIconFor(mode: QueueManager.RepeatMode, active: Color, inactive: Color): Pair<ImageVector, Color> {
-    return when (mode) {
-        QueueManager.RepeatMode.OFF -> Icons.Default.Repeat to inactive
-        QueueManager.RepeatMode.ALL -> Icons.Default.Repeat to active
-        QueueManager.RepeatMode.ONE -> Icons.Default.RepeatOne to active
     }
 }
 
@@ -710,7 +844,8 @@ private fun FinishedNowPlaying(
     modifier: Modifier = Modifier,
 ) {
     val totalMs = queueState.items.sumOf { it.track.durationMs }
-    Box(modifier = modifier.fillMaxSize().background(HeroBackdrop)) {
+    Box(modifier = modifier.fillMaxSize()) {
+        AmbientBackdrop(HeroBlobViolet, HeroBlobTeal)
         Column(
             modifier = Modifier
                 .fillMaxSize()

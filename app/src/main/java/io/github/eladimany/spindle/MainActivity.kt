@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -61,7 +62,9 @@ class MainActivity : ComponentActivity() {
                 val uiState by viewModel.uiState.collectAsStateWithLifecycle()
                 val isFirstScan = uiState.isScanning && uiState.trackCount == 0
 
-                var showSplash by remember { mutableStateOf(true) }
+                // Saveable: the splash is for app start only, never again after a rotation or
+                // other recreation (it showed for ~1 s on every turn of the phone).
+                var showSplash by rememberSaveable { mutableStateOf(true) }
                 LaunchedEffect(Unit) {
                     delay(900)
                     showSplash = false

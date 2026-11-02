@@ -1,5 +1,8 @@
 package io.github.eladimany.spindle.ui.components
 
+import android.os.VibrationEffect
+import android.os.Vibrator
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.spring
@@ -32,9 +35,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -98,6 +103,11 @@ fun MiniPlayerBar(
     val thresholdPx = with(density) { 35.dp.toPx() }
     val flingVelocityPx = with(density) { 800.dp.toPx() }
     var dragOffsetPx by remember { mutableFloatStateOf(0f) }
+    // A short tick when a swipe skips, so it's felt without looking (user request,
+    // 2026-11-02). Vibrator directly, like the sliders: the semantic haptic constants
+    // were too weak to feel on the A73.
+    val context = LocalContext.current
+    val vibrator = remember { context.getSystemService(Vibrator::class.java) }
     val hasNext = nextTrack != null
     // Past 5 s, "previous" restarts this track (PlaybackController.previous), so a swipe
     // back previews the same song and works even on the first track.
@@ -154,6 +164,7 @@ fun MiniPlayerBar(
                                     targetValue = goDirection * thresholdPx,
                                     animationSpec = tween(120),
                                 ) { value, _ -> dragOffsetPx = value }
+                                vibrator?.vibrate(VibrationEffect.createOneShot(25, 170))
                                 if (goDirection < 0f) onNext() else onPrevious()
                                 dragOffsetPx = 0f
                             } else {
@@ -241,8 +252,17 @@ private fun ProgressLine(fraction: Float, modifier: Modifier = Modifier) {
  * seek bar on Now Playing.
  */
 @Composable
-private fun rememberPlaybackProgress(state: PlaybackState): State<Float> =
-    produceState(0f, state) {
+private fun rememberPlaybackProgress(state: PlaybackState): State<Float> {
+    val itemId = when (state) {
+        is PlaybackState.Playing -> state.item.id
+        is PlaybackState.Paused -> state.item.id
+        is PlaybackState.Buffering -> state.item.id
+        else -> null
+    }
+    val lastItem = remember { mutableStateOf<String?>(null) }
+    val lastItemId = lastItem.value
+    SideEffect { if (itemId != null) lastItem.value = itemId }
+    return produceState(0f, state) {
         when (state) {
             is PlaybackState.Playing -> while (true) {
                 val position = state.positionMs + (System.currentTimeMillis() - state.capturedAtMs)
@@ -250,9 +270,12 @@ private fun rememberPlaybackProgress(state: PlaybackState): State<Float> =
                 delay(500)
             }
             is PlaybackState.Paused -> value = if (state.durationMs > 0) state.positionMs.toFloat() / state.durationMs else 0f
+            // A new song loading starts at 0, not where the last one was (a rebuffer mid-song keeps its place).
+            is PlaybackState.Buffering -> if (state.item.id != lastItemId) value = 0f
             else -> Unit
         }
     }
+}
 
 /** After the last track: "Queue finished" and a play button that starts it again. */
 @Composable

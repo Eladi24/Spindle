@@ -16,6 +16,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Box
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.eladimany.spindle.core.model.Track
@@ -27,6 +31,8 @@ import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 import io.github.eladimany.spindle.ui.components.countLabel
 import io.github.eladimany.spindle.ui.components.durationLabel
+import io.github.eladimany.spindle.ui.covers.CoverConfirmSheet
+import io.github.eladimany.spindle.ui.covers.FindCoverChip
 import io.github.eladimany.spindle.ui.playlists.AddToPlaylistSheet
 
 @Composable
@@ -38,6 +44,8 @@ fun AlbumDetailScreen(
     val album by viewModel.album.collectAsStateWithLifecycle()
     val tracks by viewModel.tracks.collectAsStateWithLifecycle()
     val currentTrackId by viewModel.currentTrackId.collectAsStateWithLifecycle()
+    val hasCover by viewModel.hasCover.collectAsStateWithLifecycle()
+    val coverLookup by viewModel.coverLookup.collectAsStateWithLifecycle()
     var albumPlaylistTrackIds by remember { mutableStateOf<List<Long>?>(null) }
     var actionsTarget by remember { mutableStateOf<List<Track>?>(null) }
     val listState = rememberLazyListState()
@@ -75,12 +83,21 @@ fun AlbumDetailScreen(
                         onSmartShuffle = viewModel::playSmartShuffled,
                         playEnabled = tracks.isNotEmpty(),
                     ) {
-                        AlbumArtwork(
-                            album = a,
-                            fetchArtworkUri = viewModel::artworkUriForAlbum,
-                            modifier = Modifier.fillMaxSize(),
-                            cornerRadiusDp = 14,
-                        )
+                        Box(Modifier.fillMaxSize()) {
+                            AlbumArtwork(
+                                album = a,
+                                fetchArtworkUri = viewModel::artworkUriForAlbum,
+                                modifier = Modifier.fillMaxSize(),
+                                cornerRadiusDp = 14,
+                            )
+                            if (hasCover == false) {
+                                FindCoverChip(
+                                    searching = coverLookup is AlbumDetailViewModel.CoverLookup.Searching,
+                                    onClick = viewModel::findCover,
+                                    modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -94,6 +111,26 @@ fun AlbumDetailScreen(
                 )
             }
         }
+    }
+
+    when (val lookup = coverLookup) {
+        is AlbumDetailViewModel.CoverLookup.Showing -> CoverConfirmSheet(
+            candidate = lookup.candidates[lookup.index],
+            message = lookup.error,
+            saving = lookup.saving,
+            onUse = viewModel::useShownCover,
+            onNotThis = viewModel::notThisCover,
+            onDismiss = viewModel::closeCoverLookup,
+        )
+        is AlbumDetailViewModel.CoverLookup.Failed -> CoverConfirmSheet(
+            candidate = null,
+            message = lookup.message,
+            saving = false,
+            onUse = {},
+            onNotThis = {},
+            onDismiss = viewModel::closeCoverLookup,
+        )
+        else -> Unit
     }
 
     albumPlaylistTrackIds?.let { ids ->

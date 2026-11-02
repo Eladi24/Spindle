@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Smartphone
@@ -59,8 +60,9 @@ import io.github.eladimany.spindle.playback.LocalRoute
 import io.github.eladimany.spindle.playback.LocalRouteKind
 import io.github.eladimany.spindle.playback.OutputTarget
 
-fun OutputTarget.displayName(): String = when (this) {
-    OutputTarget.Local -> "This phone"
+/** [localName] = what "This phone" plays through, from `PlayerViewModel.localOutputName`. */
+fun OutputTarget.displayName(localName: String = "This phone"): String = when (this) {
+    OutputTarget.Local -> localName
     is OutputTarget.Node -> player.name
 }
 
@@ -79,6 +81,10 @@ fun OutputPickerSheet(
         granted[Manifest.permission.BLUETOOTH_CONNECT]?.let { hasBluetoothConnectPermission = it }
     }
 
+    // Re-read paired devices on open, on a grant, and whenever one connects or drops.
+    val routesForRefresh by viewModel.localRoutes.collectAsStateWithLifecycle()
+    LaunchedEffect(routesForRefresh, hasBluetoothConnectPermission) { viewModel.refreshBluetooth() }
+
     DisposableEffect(hasNearbyWifiPermission) {
         if (hasNearbyWifiPermission) viewModel.startDiscovery()
         onDispose { viewModel.stopDiscovery() }
@@ -89,7 +95,8 @@ fun OutputPickerSheet(
     val isScanning by viewModel.isScanning.collectAsStateWithLifecycle()
     val errorMessage by viewModel.errorMessage.collectAsStateWithLifecycle()
     val localRoutes by viewModel.localRoutes.collectAsStateWithLifecycle()
-    val preferredRouteId by viewModel.preferredRouteId.collectAsStateWithLifecycle()
+    val activeRoute by viewModel.activeRoute.collectAsStateWithLifecycle()
+    val pairedDevices by viewModel.pairedDevices.collectAsStateWithLifecycle()
 
     var showManualEntry by remember { mutableStateOf(false) }
     var manualHost by remember { mutableStateOf("") }
@@ -151,54 +158,82 @@ fun OutputPickerSheet(
                     icon = Icons.Default.Smartphone,
                     title = "This phone",
                     subtitle = "Built-in speaker",
-                    // Also active before anything's ever been explicitly picked
-                    // (preferredRouteId still null) — selectLocal() itself always
-                    // pins the speaker from here on, so this only matters pre-pin.
+                    // From where sound really goes, not from the pin: with earbuds on
+                    // and nothing pinned, this card used to read ACTIVE (S25+).
                     isActive = target == OutputTarget.Local &&
-                        (preferredRouteId == null || preferredRouteId == speakerRoute?.id),
+                        (activeRoute == null || activeRoute?.id == speakerRoute?.id),
                     onClick = { viewModel.selectLocal() },
                 )
 
-                // Only worth showing when there's an actual choice beyond the
-                // speaker "This phone" already covers — a connected Bluetooth or
-                // wired device.
-                if (otherRoutes.isNotEmpty()) {
-                    Text(
-                        "OUTPUT DEVICE",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        letterSpacing = 0.8.sp,
+                // Android Auto / another output no row can pin: shown while it's playing.
+                activeRoute?.takeIf { it.kind == LocalRouteKind.OTHER && target == OutputTarget.Local }?.let { route ->
+                    OutputCard(
+                        icon = Icons.Default.DirectionsCar,
+                        title = viewModel.routeDisplayName(route),
+                        subtitle = "Chosen by Android",
+                        isActive = true,
+                        onClick = { },
                     )
-                    otherRoutes.forEach { route ->
+                }
+
+                val wiredRoutes = otherRoutes.filter { it.kind == LocalRouteKind.WIRED }
+                if (wiredRoutes.isNotEmpty()) {
+                    SectionLabel("OUTPUT DEVICE")
+                    wiredRoutes.forEach { route ->
                         OutputCard(
-                            icon = when (route.kind) {
-                                LocalRouteKind.SPEAKER -> Icons.Default.Speaker
-                                LocalRouteKind.BLUETOOTH -> Icons.Default.Bluetooth
-                                LocalRouteKind.WIRED -> Icons.Default.Headphones
-                            },
+                            icon = Icons.Default.Headphones,
                             title = viewModel.routeDisplayName(route),
-                            subtitle = when (route.kind) {
-                                LocalRouteKind.SPEAKER -> "Built-in"
-                                LocalRouteKind.BLUETOOTH -> "Bluetooth"
-                                LocalRouteKind.WIRED -> "Wired"
-                            },
-                            isActive = target == OutputTarget.Local && preferredRouteId == route.id,
-                            onClick = { viewModel.selectLocalRoute(route) },
+                            subtitle = "Wired",
+                            isActive = target == OutputTarget.Local && activeRoute?.id == route.id,
+                            onClick = { viewModel.selectDevice(route) },
                         )
                     }
-                    // Decoupled from the network permission card below — a device
-                    // can easily have granted that one already (e.g. an earlier
-                    // test session) without ever having been asked for this one,
-                    // since they're only ever requested together, gated on
-                    // whichever one happens to still be missing.
-                    if (!hasBluetoothConnectPermission && otherRoutes.any { it.kind == LocalRouteKind.BLUETOOTH }) {
-                        TextButton(
-                            onClick = { permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)) },
-                            contentPadding = PaddingValues(horizontal = 6.dp),
-                        ) {
-                            Text("Show the Bluetooth device's real name")
-                        }
+                }
+
+                // BLUETOOTH (mockup 8A): connected devices play here as before; paired ones
+                // that aren't connected get "Connect", which opens Android's output switcher.
+                val connectedBluetooth = otherRoutes.filter { it.kind == LocalRouteKind.BLUETOOTH }
+                val connectedAddresses = connectedBluetooth.mapNotNull { it.address }.toSet()
+                val pairedOnly = pairedDevices.filter { it.address !in connectedAddresses }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    SectionLabel("BLUETOOTH", Modifier.weight(1f))
+                    TextButton(onClick = viewModel::pairNewBluetooth, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                        Text("Pair new ›")
                     }
+                }
+                connectedBluetooth.forEach { route ->
+                    OutputCard(
+                        icon = Icons.Default.Bluetooth,
+                        title = viewModel.routeDisplayName(route),
+                        subtitle = "Connected",
+                        isActive = target == OutputTarget.Local && activeRoute?.id == route.id,
+                        onClick = { viewModel.selectDevice(route) },
+                    )
+                }
+                pairedOnly.forEach { device ->
+                    OutputCard(
+                        icon = Icons.Default.Bluetooth,
+                        title = device.name,
+                        subtitle = "Paired · not connected",
+                        isActive = false,
+                        action = "Connect",
+                        onClick = viewModel::connectBluetooth,
+                    )
+                }
+                if (!hasBluetoothConnectPermission) {
+                    TextButton(
+                        onClick = { permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)) },
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text("Show your Bluetooth devices")
+                    }
+                } else if (connectedBluetooth.isEmpty() && pairedOnly.isEmpty()) {
+                    Text(
+                        "No paired Bluetooth speakers or headphones.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                    )
                 }
 
                 NetworkHeader(
@@ -279,6 +314,7 @@ private fun OutputCard(
     subtitle: String,
     isActive: Boolean,
     onClick: () -> Unit,
+    action: String? = null,
 ) {
     val containerColor = if (isActive) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer
     val borderColor = if (isActive) containerColor else MaterialTheme.colorScheme.outlineVariant
@@ -317,6 +353,16 @@ private fun OutputCard(
                 subtitle,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (!isActive && action != null) {
+            Text(
+                action,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             )
         }
         if (isActive) {
@@ -414,4 +460,15 @@ private fun PermissionRequestCard(onGrant: () -> Unit) {
         )
         Button(onClick = onGrant) { Text("Grant access") }
     }
+}
+
+@Composable
+private fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        letterSpacing = 0.8.sp,
+        modifier = modifier,
+    )
 }
