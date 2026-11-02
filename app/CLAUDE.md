@@ -10,7 +10,72 @@ Do not write a playback engine for that path.
 Protocol facts were measured against real hardware — see `docs/bluos-api.md`.
 Trust that file over any assumption about BluOS.
 
-## ▶ Next session — start here (updated 2026-10-29)
+## ▶ Next session — start here (updated 2026-11-02)
+
+**State:** **0.9.9-beta (versionCode 10)** built as `Spindle-0.9.9-beta.apk`, **not committed**
+and **not run on any phone** (none attached, no emulator AVD). Ask for the "New in 0.9.9"
+checklist (R1–R8 in `docs/PHASE3-NODE-TESTS.md`), then remind the user of P2–P6, Q1, Q2
+(they asked to be reminded). S25+ news: Gemini Nano now available there (after the model
+download); the free-key engine works well.
+
+**2026-11-02, built:**
+- **Audio-route sync** (car played on the phone speaker until an app restart; picker said "This
+  phone" while earbuds played). Cause: "This phone" pinned the speaker, and `BluetoothAutoSwitch`
+  pinned the speaker again when the car's Bluetooth dropped (Android Auto takes over within ~3 s).
+  Now nothing is pinned unless the user picks a device Android wouldn't (`selectLocal()` pins the
+  speaker only when Android routes elsewhere); a new output clears any pin; a pinned one leaving
+  clears it. `LocalAudioRoutes.androidRoute` = `getAudioDevicesForAttributes(media)` (API 33+;
+  else BT > wired > speaker), re-read 2 s after device changes and when the sheet opens;
+  `LocalOutput.activeRoute` = pin or Android's route — the sheet's ACTIVE row, and the pill /
+  mini-player name (`PlayerViewModel.localOutputName`). `LocalRouteKind.OTHER` = Android Auto /
+  unknown output (row "Android Auto" in car mode). LE Audio + USB headsets mapped.
+- **Android Auto:** `PlaybackService` is a `MediaLibraryService` (exported; MediaBrowserService
+  intent; `automotive_app_desc.xml`). `playback/auto/LibraryBrowser`: tabs For you (Smart
+  shuffle, Shuffle all, Recently added 100) / Playlists / Albums (grid hint) / Artists; ids
+  `t|<list>|<trackId>`, `shuffle|<list>`, `smart|<list>`; search + voice (empty query = smart
+  shuffle all). `onSetMediaItems` plays through `PlaybackController`; `SessionPlayer` then
+  ignores Media3's follow-up play for 2 s (`startedByBrowser`). Custom buttons: shuffle mode,
+  repeat, boost (`setMediaButtonPreferences`). `ArtworkProvider` (non-exported,
+  `${applicationId}.artwork/album/<id>`, prefix grant to the connecting package) serves covers,
+  extracting on demand; also now the session's artwork. startForeground is try/caught (bound by
+  Auto in the background) and retried when playing. Sideloaded APKs need AA developer settings →
+  Unknown sources.
+- **UI from canvas "Spindle player refresh"** (https://claude.ai/artifact/FnuWjViFXhWjkLoZFBbVWr;
+  user picked 4C, 5C, 6B, then corrected to **7B (record crate) upright + 7A (cover flow)
+  sideways**; checked on the A73 the same day, fixes there: glow clipped by the pager →
+  shadow in the cover's graphicsLayer + pager vertical padding; crate panel runs to the
+  clipped bottom of the crate area; sideways = one-row title + covers left, info right; the
+  portrait scrub slider was dropped with the swap):
+  - 5C: `AmbientBackdrop` (near-black + two radial glows) from `CoverPalette` (pure hue
+    histogram, `CoverPaletteTest`) via `CoverPaletteLoader` (24 px decode of the cached cover);
+    accent → progress line glow, BOOST, play-button glow. No androidx.palette.
+  - 4C: `ModeGlyph` — off dim, on lavender + halo + dot, smart pink + sparkle (fixed colours).
+  - 6B: covers in a `HorizontalPager` over `queueState.items` (no keys — index-based on purpose,
+    so a reorder doesn't move it); user swipe → `next()` or `jumpTo()` + tick; queue changes
+    animate it. Title follows the pager's page.
+  - 7A/7B: `ui/library/AlbumFlow.kt` — one continuous position, `flipGesture` (drag + fling to
+    nearest), tick per album; Grid | Flow toggle saved (`SettingsRepository.albumsFlowView`).
+  - Mini-player swipe-skip vibrates (25 ms).
+- **Later the same day (debug build on the A73, release not rebuilt):** crate = bigger sleeves,
+  no front panel / letter, all records lean back (leaning toward the viewer magnified them);
+  `AlbumFlowInfo` smaller; Flow remembers its album (`AlbumsViewModel.flowAlbumId`). Seek-bar
+  "full" flash on song change = ExoPlayer `TIME_UNSET` → `LocalOutput.durationOf` falls back to
+  the track length; bar/mini-player reset only when the item changes. Rotation no longer shows
+  the splash: `MainActivity` has `configChanges` (no recreation) + `rememberSaveable` flag.
+  - **8A Bluetooth in Play on:** `PairedBluetoothDevices` (bonded audio-class devices, needs
+    BLUETOOTH_CONNECT); paired-not-connected rows → "Connect" =
+    `MediaRouter2.showSystemOutputSwitcher()` (API 34+, else Bluetooth settings); "Pair new ›".
+    Connected ones matched by `LocalRoute.address` (MAC).
+  - **9A/9B covers:** `data/covers/` — `DeezerAlbumArt` (pure, `DeezerAlbumArtTest`; title +
+    artist must both match loosely, exact title breaks ties), `AlbumCoverClient`,
+    `AlbumCoverFinder` (singleton: `checkMissing()` on Albums open, `candidates/use` for one
+    album, `findAll/stop/reject` for the library). Saved to `files/album-covers/<hash of
+    artist+album>.jpg` (survives rescans, which null `albums.artworkUri`);
+    `ArtworkRepository` falls back to it; `ArtworkRevision` bump reloads artwork on screen.
+    UI `ui/covers/CoverViews.kt`: Find cover chip + confirm sheet on album pages; notice
+    (Grid view) or a corner pill with the count (Flow view, `MissingCoversButton`) + sheet on Albums. On the A73 4 covers were found in the first run.
+
+### 2026-10-29
 
 **State:** **0.9.8-beta (versionCode 9)**, commit 912a163, pushed. `Spindle-0.9.8-beta.apk` is
 for the user's S25+; the A73 has the 0.9.8 debug build. Nothing from 0.9.7/0.9.8 has run at

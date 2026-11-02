@@ -29,6 +29,8 @@ It's built to survive real homes: it reconnects when the WiFi drops, follows you
 - Your queue survives: close the app or come back tomorrow, and it's waiting where you left it.
 - Original files, original quality: FLAC and hi-res go through untouched.
 - Finds players on your network automatically, or connect by IP. Pick your streamer from any tab, even before choosing a song.
+- Your paired Bluetooth speakers and headphones are listed too; connect one from Spindle.
+- **Android Auto**: browse your playlists, albums and artists on the car screen, search by voice, and shuffle, repeat or boost from the car's player.
 
 **🔀 Smart shuffle**
 - Learns from what you play to the end and what you skip, all on your phone.
@@ -36,7 +38,7 @@ It's built to survive real homes: it reconnects when the WiFi drops, follows you
 - Boost a song from the player to hear it sooner. In the queue, swipe a song right and the next 8 songs become ones like it.
 
 **🪄 Playlists that build themselves**
-- *"Mellow 90s for a rainy evening"*: describe a playlist in words, set its length in songs or minutes, and **Gemini Nano** turns it into one, **running entirely on the phone**. No account, no cloud, nothing leaves your device. *(Beta, on phones whose Android offers it to apps, such as the Galaxy S26 series and Pixel 9 and newer.)*
+- *"Mellow 90s for a rainy evening"*: describe a playlist in words, set its length in songs or minutes, and **Gemini Nano** turns it into one, **running entirely on the phone**. No account, no cloud, nothing leaves your device. *(Beta, on phones whose Android offers it to apps, such as the Galaxy S25 and S26 series and Pixel 9 and newer.)*
 - Phone without Gemini Nano? Add your own **free Gemini key** from Google AI Studio in a few taps. Your request, your library's genre and decade names and the artist and title of the songs it picks from are sent; with no billing on the key, nothing can ever be charged.
 - No on-device AI? Pick an era, genres and a length, and Spindle builds it from your tags.
 - Every draft shows what Spindle understood, and you can adjust it before saving.
@@ -44,10 +46,12 @@ It's built to survive real homes: it reconnects when the WiFi drops, follows you
 **🏷️ Tidy track info**
 - Finds tracks with no artist and suggests the fix from the title or file name ("Deep Purple - Highway Star").
 - Optionally checks them with **MusicBrainz** and fills in the album, year and genre, after you ask, never by itself.
+- Albums without cover art? Spindle finds the covers on **Deezer**, one album or the whole library, when you ask. You confirm each match.
 - Fixes live in Spindle only: your music files are never changed.
 
 **🎨 Feels good to use**
-- A dark, glassy design with a floating, frosted nav bar and a full-screen Now Playing view.
+- A dark, glassy design with a floating, frosted nav bar and a Now Playing view that glows in the colours of the album cover.
+- Swipe the cover to skip a song, and flip through your albums like records in a crate, or turn the phone for a row of covers.
 - Fast with thousands of tracks: A–Z fast scroll, M3U import/export, lock-screen and headset controls.
 
 ## Built with

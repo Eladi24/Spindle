@@ -260,6 +260,35 @@ sheet now searches 10 s, then shows ↻ (mockup option A).
 
 ---
 
+## New in 0.9.9 — to check on your phone (2026-11-02)
+
+**Build: `Spindle-0.9.9-beta.apk`** (release, installs over 0.9.x, keeps everything). Nothing in
+it has run on a phone yet — built with no phone or emulator attached.
+
+- [ ] **R1. Car, Android Auto.** Get in with music playing on the phone. **Expect:** it moves to
+      the car speakers by itself, no app restart. The Play on sheet shows "Android Auto" as active.
+- [ ] **R2. Spindle in Android Auto.** First: Android Auto settings → tap the version ~10× →
+      ⋮ Developer settings → **Unknown sources** on. **Expect:** Spindle in the car's launcher and
+      in "Customise launcher". Tabs For you / Playlists / Albums (covers) / Artists; tap a song →
+      its album or playlist plays from there; Shuffle rows; the ⋯ buttons on the player (shuffle
+      mode, repeat, boost); search; "Hey Google, play Deep Purple on Spindle".
+- [ ] **R3. Bluetooth earbuds.** Connected before opening the app: the Play on sheet marks the
+      earbuds active (not "This phone"), and the pill under the tab titles shows their name.
+      Pick "This phone" → speaker. Connect them again → sound moves to them.
+- [ ] **R4. Mini-player swipe.** A short vibration when a swipe skips.
+- [ ] **R5. New player look (5C).** Black backdrop glowing in the cover's colours; the colours
+      change with the song. Progress line and BOOST in the cover's colour.
+- [ ] **R6. Shuffle / repeat (4C).** Off = dim; on = lavender + glow + dot; Smart = pink + sparkle.
+      Easy to tell at a glance?
+- [ ] **R7. Swipe the cover (6B).** Previous/next covers peek at the sides; swipe left = next song,
+      right = previous (from its start), with a tick. Buttons and the lock screen still move the
+      covers along.
+- [ ] **R8. Albums → Flow.** Upright: cover flow — drag, fling, tap a side cover to bring it in,
+      tap the centre one to open it, the slider scrubs; Play / Shuffle / Smart. Turn the phone:
+      the record crate — flick up/down. Grid/Flow is remembered.
+
+Still waiting from 0.9.7/0.9.8: P2–P6, Q1, Q2 below.
+
 ## New in 0.9.8 — to check at the Node (2026-10-29)
 
 **Build: `Spindle-0.9.8-beta.apk`** (also has everything from 0.9.7 below). Fixes from the
