@@ -53,6 +53,12 @@ class AlbumsViewModel @Inject constructor(
         viewModelScope.launch { settings.dismissCoverNotice(coverFinder.missing.value?.size ?: 0) }
     }
 
+    val folderGranted: StateFlow<Boolean> = coverFinder.folderTree.map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val folderPass: StateFlow<AlbumCoverFinder.FolderPass> = coverFinder.folderPass
+
+    fun grantFolder(treeUri: android.net.Uri) = coverFinder.grantFolder(treeUri)
+
     fun findAllCovers() = coverFinder.findAll()
     fun stopFindingCovers() = coverFinder.stop()
     fun rejectCover(album: Album) = coverFinder.reject(album)

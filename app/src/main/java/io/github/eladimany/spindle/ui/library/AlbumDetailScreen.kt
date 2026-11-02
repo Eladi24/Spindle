@@ -31,7 +31,12 @@ import io.github.eladimany.spindle.ui.components.TrackActionsSheet
 import io.github.eladimany.spindle.ui.components.TrackRow
 import io.github.eladimany.spindle.ui.components.countLabel
 import io.github.eladimany.spindle.ui.components.durationLabel
+import io.github.eladimany.spindle.ui.covers.AlbumCoverSheet
 import io.github.eladimany.spindle.ui.covers.CoverConfirmSheet
+import io.github.eladimany.spindle.ui.covers.rememberMusicFolderPicker
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import io.github.eladimany.spindle.ui.covers.FindCoverChip
 import io.github.eladimany.spindle.ui.playlists.AddToPlaylistSheet
 
@@ -46,6 +51,13 @@ fun AlbumDetailScreen(
     val currentTrackId by viewModel.currentTrackId.collectAsStateWithLifecycle()
     val hasCover by viewModel.hasCover.collectAsStateWithLifecycle()
     val coverLookup by viewModel.coverLookup.collectAsStateWithLifecycle()
+    val coverOptionsOpen by viewModel.coverOptionsOpen.collectAsStateWithLifecycle()
+    val folderImages by viewModel.folderImages.collectAsStateWithLifecycle()
+    val folderGranted by viewModel.folderGranted.collectAsStateWithLifecycle()
+    val pickMusicFolder = rememberMusicFolderPicker(viewModel::grantFolder)
+    val pickPhoto = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        uri?.let(viewModel::useImage)
+    }
     var albumPlaylistTrackIds by remember { mutableStateOf<List<Long>?>(null) }
     var actionsTarget by remember { mutableStateOf<List<Track>?>(null) }
     val listState = rememberLazyListState()
@@ -93,7 +105,7 @@ fun AlbumDetailScreen(
                             if (hasCover == false) {
                                 FindCoverChip(
                                     searching = coverLookup is AlbumDetailViewModel.CoverLookup.Searching,
-                                    onClick = viewModel::findCover,
+                                    onClick = viewModel::openCoverOptions,
                                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
                                 )
                             }
@@ -111,6 +123,18 @@ fun AlbumDetailScreen(
                 )
             }
         }
+    }
+
+    if (coverOptionsOpen) {
+        AlbumCoverSheet(
+            folderGranted = folderGranted,
+            images = folderImages,
+            onAllowFolder = pickMusicFolder,
+            onUseImage = { viewModel.useImage(it.uri) },
+            onDeezer = viewModel::findCoverOnDeezer,
+            onPhone = { pickPhoto.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+            onDismiss = viewModel::closeCoverOptions,
+        )
     }
 
     when (val lookup = coverLookup) {

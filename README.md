@@ -46,7 +46,7 @@ It's built to survive real homes: it reconnects when the WiFi drops, follows you
 **🏷️ Tidy track info**
 - Finds tracks with no artist and suggests the fix from the title or file name ("Deep Purple - Highway Star").
 - Optionally checks them with **MusicBrainz** and fills in the album, year and genre, after you ask, never by itself.
-- Albums without cover art? Spindle finds the covers on **Deezer**, one album or the whole library, when you ask. You confirm each match.
+- Albums without cover art? Spindle uses the cover images already in your album folders (cover.jpg, folder.jpg…), lets you pick any picture, or finds the cover on **Deezer**, one album or the whole library, when you ask.
 - Fixes live in Spindle only: your music files are never changed.
 
 **🎨 Feels good to use**

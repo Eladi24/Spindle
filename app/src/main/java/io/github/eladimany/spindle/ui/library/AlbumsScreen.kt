@@ -41,6 +41,7 @@ import io.github.eladimany.spindle.ui.components.AlbumArtwork
 import io.github.eladimany.spindle.ui.covers.FindCoversSheet
 import io.github.eladimany.spindle.ui.covers.MissingCoversButton
 import io.github.eladimany.spindle.ui.covers.MissingCoversNotice
+import io.github.eladimany.spindle.ui.covers.rememberMusicFolderPicker
 import io.github.eladimany.spindle.ui.components.GlassIconButton
 import io.github.eladimany.spindle.ui.components.LargeTitleBar
 import io.github.eladimany.spindle.ui.components.LocalBottomOverlayPadding
@@ -65,11 +66,17 @@ fun AlbumsScreen(
     val coverScan by viewModel.coverScan.collectAsStateWithLifecycle()
     val missingCovers by viewModel.missingCoverCount.collectAsStateWithLifecycle()
     var showCoverSheet by remember { mutableStateOf(false) }
+    val folderGranted by viewModel.folderGranted.collectAsStateWithLifecycle()
+    val folderPass by viewModel.folderPass.collectAsStateWithLifecycle()
+    val pickMusicFolder = rememberMusicFolderPicker(viewModel::grantFolder)
     if (showCoverSheet) {
         FindCoversSheet(
             scan = coverScan,
             missingCount = missingCovers,
             fetchArtworkUri = viewModel::artworkUriForAlbum,
+            folderGranted = folderGranted,
+            folderPass = folderPass,
+            onAllowFolder = pickMusicFolder,
             onStart = viewModel::findAllCovers,
             onStop = viewModel::stopFindingCovers,
             onReject = viewModel::rejectCover,

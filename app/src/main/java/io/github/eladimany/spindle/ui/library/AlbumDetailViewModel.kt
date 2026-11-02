@@ -1,5 +1,6 @@
 package io.github.eladimany.spindle.ui.library
 
+import android.net.Uri
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -8,6 +9,7 @@ import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.core.model.Track
 import io.github.eladimany.spindle.data.covers.AlbumCoverFinder
 import io.github.eladimany.spindle.data.covers.CoverCandidate
+import io.github.eladimany.spindle.data.covers.FolderImage
 import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.library.ArtworkRevision
 import io.github.eladimany.spindle.data.library.LibraryRepository
@@ -16,6 +18,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -64,6 +68,55 @@ class AlbumDetailViewModel @Inject constructor(
                 _hasCover.value = artworkRepository.artworkUriForAlbum(album) != null
             }
         }
+    }
+
+    // 10B: the "Album cover" sheet — this album's folder images, Deezer, or any picture.
+    private val _coverOptionsOpen = MutableStateFlow(false)
+    val coverOptionsOpen: StateFlow<Boolean> = _coverOptionsOpen.asStateFlow()
+
+    private val _folderImages = MutableStateFlow<List<FolderImage>?>(null)
+    val folderImages: StateFlow<List<FolderImage>?> = _folderImages.asStateFlow()
+
+    val folderGranted: StateFlow<Boolean> = coverFinder.folderTree.map { it != null }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    init {
+        // Load (again) when the sheet opens or the folder has just been granted.
+        viewModelScope.launch {
+            combine(_coverOptionsOpen, coverFinder.folderTree) { open, tree -> open to tree }.collect { (open, tree) ->
+                val album = _album.value
+                if (!open || tree == null || album == null) return@collect
+                _folderImages.value = null
+                _folderImages.value = coverFinder.folderImages(album, tree)
+            }
+        }
+    }
+
+    fun openCoverOptions() {
+        _coverOptionsOpen.value = true
+    }
+
+    fun closeCoverOptions() {
+        _coverOptionsOpen.value = false
+    }
+
+    fun grantFolder(treeUri: Uri) = coverFinder.grantFolder(treeUri)
+
+    /** A folder image or a picture from the photo picker. */
+    fun useImage(image: Uri) {
+        val album = _album.value ?: return
+        viewModelScope.launch {
+            if (coverFinder.useImage(album, image)) {
+                _coverOptionsOpen.value = false
+            } else {
+                _coverLookup.value = CoverLookup.Failed("Couldn\u2019t read that picture")
+            }
+        }
+    }
+
+    fun findCoverOnDeezer() {
+        _coverOptionsOpen.value = false
+        findCover()
     }
 
     fun findCover() {

@@ -260,7 +260,7 @@ sheet now searches 10 s, then shows ↻ (mockup option A).
 
 ---
 
-## New in 0.9.9 — to check on your phone (2026-11-02)
+## New in 0.9.9 / 0.9.10 — to check on your phone (2026-11-02)
 
 **Build: `Spindle-0.9.9-beta.apk`** (release, installs over 0.9.x, keeps everything). Nothing in
 it has run on a phone yet — built with no phone or emulator attached.
@@ -286,6 +286,14 @@ it has run on a phone yet — built with no phone or emulator attached.
 - [ ] **R8. Albums → Flow.** Upright: cover flow — drag, fling, tap a side cover to bring it in,
       tap the centre one to open it, the slider scrubs; Play / Shuffle / Smart. Turn the phone:
       the record crate — flick up/down. Grid/Flow is remembered.
+
+**0.9.10-beta adds** (`Spindle-0.9.10-beta.apk`):
+
+- [ ] **R9. Covers from your folders.** Albums → corner pill (Flow) or notice (Grid) → Find covers →
+      Allow access to your music folder → Music → Use this folder. **Expect:** "✓ N found" for albums
+      whose folder has cover.jpg / folder.jpg / front.jpg; a folder holding several albums is skipped.
+- [ ] **R10. One album.** Album without a cover → Add cover: its folder's images (tap one to use),
+      Find on Deezer, Choose from phone (pick any picture). **Expect:** the cover appears at once.
 
 Still waiting from 0.9.7/0.9.8: P2–P6, Q1, Q2 below.
 

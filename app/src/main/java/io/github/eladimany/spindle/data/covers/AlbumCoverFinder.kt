@@ -1,6 +1,9 @@
 package io.github.eladimany.spindle.data.covers
 
+import android.net.Uri
 import io.github.eladimany.spindle.core.model.Album
+import io.github.eladimany.spindle.data.db.dao.TrackDao
+import io.github.eladimany.spindle.data.prefs.SettingsRepository
 import io.github.eladimany.spindle.data.library.ArtworkRepository
 import io.github.eladimany.spindle.data.library.LibraryRepository
 import java.io.IOException
@@ -12,6 +15,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -19,17 +25,36 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
- * Covers for albums whose files have none (mockups 9A/9B, 2026-11-02): one album on
- * request with a confirm step ([candidates] + [use]), or the whole library in the
- * background ([findAll]) — runs on in this singleton's scope when the sheet closes.
+ * Covers for albums whose files have none (mockups 9A/9B/10A/10B, 2026-11-02). First
+ * from image files in the album's folder, once the user has granted the music folder
+ * ([findInFolders], on the phone, runs by itself after each check); then from Deezer —
+ * one album on request with a confirm step ([candidates] + [use]), or the rest of the
+ * library in the background ([findAll]). Jobs run on in this singleton's scope.
  */
 @Singleton
 class AlbumCoverFinder @Inject constructor(
     private val client: AlbumCoverClient,
     private val artwork: ArtworkRepository,
     private val library: LibraryRepository,
+    private val folders: FolderCoverSource,
+    private val settings: SettingsRepository,
+    private val trackDao: TrackDao,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /** The granted music folder, if any. */
+    val folderTree: StateFlow<Uri?> = settings.musicFolderTree.map { it?.let(Uri::parse) }
+        .stateIn(scope, SharingStarted.Eagerly, null)
+
+    sealed interface FolderPass {
+        data object Idle : FolderPass
+        data object Running : FolderPass
+        data class Done(val found: List<Album>) : FolderPass
+    }
+
+    private val _folderPass = MutableStateFlow<FolderPass>(FolderPass.Idle)
+    val folderPass: StateFlow<FolderPass> = _folderPass.asStateFlow()
+    private var folderJob: Job? = null
 
     sealed interface Scan {
         data object Idle : Scan
@@ -54,7 +79,54 @@ class AlbumCoverFinder @Inject constructor(
         checkJob = scope.launch {
             val albums = library.albums.first()
             _missing.value = albums.filter { artwork.artworkUriForAlbum(it) == null }
+            // Local and read-only, so new albums get their folder covers without asking.
+            if (settings.musicFolderTree.first() != null) findInFolders()
         }
+    }
+
+    /** After the folder picker: keep the grant, then look in the folders. */
+    fun grantFolder(treeUri: Uri) {
+        scope.launch {
+            settings.setMusicFolderTree(treeUri.toString())
+            findInFolders()
+        }
+    }
+
+    /** Each album still missing a cover takes the likeliest image in its folder. */
+    fun findInFolders() {
+        if (folderJob?.isActive == true) return
+        folderJob = scope.launch {
+            val tree = settings.musicFolderTree.first()?.let(Uri::parse) ?: return@launch
+            _folderPass.value = FolderPass.Running
+            val found = mutableListOf<Album>()
+            for (album in _missing.value.orEmpty()) {
+                // A folder holding several albums (everything in one Music folder, as on the
+                // A73) would hand its one image to all of them: only by hand there (10B).
+                val sample = trackDao.firstTrackForAlbum(album.id) ?: continue
+                if (trackDao.albumCountInFolder(sample.folderId) != 1) continue
+                val best = folderImages(album, tree).firstOrNull() ?: continue
+                val bytes = folders.read(best.uri) ?: continue
+                artwork.saveDownloadedCover(album, bytes)
+                found += album
+            }
+            _missing.value = _missing.value?.filterNot { a -> found.any { it.id == a.id } }
+            _folderPass.value = FolderPass.Done(found)
+        }
+    }
+
+    /** The images in [album]'s folder, likeliest first; empty without folder access. */
+    suspend fun folderImages(album: Album, tree: Uri? = folderTree.value): List<FolderImage> {
+        tree ?: return emptyList()
+        val sample = trackDao.firstTrackForAlbum(album.id) ?: return emptyList()
+        return folders.imagesFor(tree, sample.uri)
+    }
+
+    /** A cover picked by hand — from the folder or the photo picker. False if it couldn't be read. */
+    suspend fun useImage(album: Album, image: Uri): Boolean {
+        val bytes = folders.read(image) ?: return false
+        artwork.saveDownloadedCover(album, bytes)
+        _missing.value = _missing.value?.filterNot { it.id == album.id }
+        return true
     }
 
     /** Deezer's matches for one album, best first. Throws IOException when Deezer can't be reached. */

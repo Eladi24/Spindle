@@ -12,10 +12,10 @@ Trust that file over any assumption about BluOS.
 
 ## ▶ Next session — start here (updated 2026-11-02)
 
-**State:** **0.9.9-beta (versionCode 10)** built as `Spindle-0.9.9-beta.apk`, **not committed**
-and **not run on any phone** (none attached, no emulator AVD). Ask for the "New in 0.9.9"
-checklist (R1–R8 in `docs/PHASE3-NODE-TESTS.md`), then remind the user of P2–P6, Q1, Q2
-(they asked to be reminded). S25+ news: Gemini Nano now available there (after the model
+**State:** **0.9.10-beta (versionCode 11)** = `Spindle-0.9.10-beta.apk`, committed and pushed
+(0.9.9-beta = 5f93de6). Much was checked on the A73 (debug), nothing yet on the S25+ or in a
+car. Ask for the checklist (R1–R10 in `docs/PHASE3-NODE-TESTS.md`), then remind the user of
+P2–P6, Q1, Q2 (they asked to be reminded). The A73 has a test album `Music/Spindle Test Album`. S25+ news: Gemini Nano now available there (after the model
 download); the free-key engine works well.
 
 **2026-11-02, built:**
@@ -73,7 +73,23 @@ download); the free-key engine works well.
     artist+album>.jpg` (survives rescans, which null `albums.artworkUri`);
     `ArtworkRepository` falls back to it; `ArtworkRevision` bump reloads artwork on screen.
     UI `ui/covers/CoverViews.kt`: Find cover chip + confirm sheet on album pages; notice
-    (Grid view) or a corner pill with the count (Flow view, `MissingCoversButton`) + sheet on Albums. On the A73 4 covers were found in the first run.
+    (Grid view) or a corner pill with the count (Flow view, `MissingCoversButton`) + sheet on Albums.
+  - **10A/10B folder covers** (user picked options 1 + 3): `FolderCoverSource` reads image
+    files next to the songs through one SAF tree the user grants (`OpenDocumentTree`, opens on
+    `primary:Music`, persisted read grant, `SettingsRepository.musicFolderTree`) — **no
+    READ_MEDIA_IMAGES** (Play restricts it to photo apps). Album folder = the track's
+    `RELATIVE_PATH` (DATA before Q), walked under the tree by name, case-insensitive. Ranking
+    `FolderCoverSource.rank` (`FolderCoverRankTest`): cover/folder/front/album… first,
+    back/cd/inlay last. `AlbumCoverFinder.findInFolders()` runs by itself after each
+    `checkMissing()` once access exists, but **skips folders holding more than one album**
+    (`TrackDao.albumCountInFolder` — the A73 keeps every song in one flat Music folder).
+    The library sheet is now step 1 folders / step 2 Deezer; the album chip says "Add cover"
+    and opens `AlbumCoverSheet`: folder images (tap to use), Find on Deezer (old confirm
+    flow), Choose from phone (`PickVisualMedia`, no permission). **Checked on the A73** with a
+    test folder `Music/Spindle Test Album` (2 silent MP3s + cover.png + back.png, made by a
+    scratch script; remove it when done): picker opens on Music, grant → "✓ 1 found"
+    (cover.png, not back.png), the 8 albums in the flat Music folder left alone; album sheet
+    says "No images in this album's folder" there; photo picker opens and backs out cleanly. On the A73 4 covers were found in the first run.
 
 ### 2026-10-29
 

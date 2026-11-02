@@ -1,5 +1,10 @@
 package io.github.eladimany.spindle.ui.covers
 
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,9 +18,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -48,6 +57,7 @@ import coil3.compose.AsyncImage
 import io.github.eladimany.spindle.core.model.Album
 import io.github.eladimany.spindle.data.covers.AlbumCoverFinder
 import io.github.eladimany.spindle.data.covers.CoverCandidate
+import io.github.eladimany.spindle.data.covers.FolderImage
 import io.github.eladimany.spindle.ui.components.AlbumArtwork
 import io.github.eladimany.spindle.ui.components.countLabel
 
@@ -76,7 +86,7 @@ fun FindCoverChip(searching: Boolean, onClick: () -> Unit, modifier: Modifier = 
         } else {
             Icon(Icons.Default.ImageSearch, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(14.dp))
         }
-        Text("Find cover", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("Add cover", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -161,6 +171,9 @@ fun FindCoversSheet(
     scan: AlbumCoverFinder.Scan,
     missingCount: Int,
     fetchArtworkUri: suspend (Album) -> String?,
+    folderGranted: Boolean,
+    folderPass: AlbumCoverFinder.FolderPass,
+    onAllowFolder: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onReject: (Album) -> Unit,
@@ -175,12 +188,59 @@ fun FindCoversSheet(
                 AlbumCoverFinder.Scan.Idle -> {
                     Text("Find missing covers", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Text(
-                        "${countLabel(missingCount, "album")} ${if (missingCount == 1) "has" else "have"} no cover in the music files. " +
-                            "Spindle looks each one up on Deezer — about ${(missingCount * 0.6).toInt().coerceAtLeast(1)} s. It keeps running if you close this.",
+                        "${countLabel(missingCount, "album")} ${if (missingCount == 1) "has" else "have"} no cover",
                         style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(PRIVACY_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = onStart, enabled = missingCount > 0, modifier = Modifier.fillMaxWidth()) { Text("Find covers") }
+                    // 10A step 1: image files next to the songs, on the phone.
+                    StepCard(number = 1, highlighted = true) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("From your music folders", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                Text("cover.jpg, folder.jpg… next to the songs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            when (folderPass) {
+                                AlbumCoverFinder.FolderPass.Running -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                                is AlbumCoverFinder.FolderPass.Done -> Text(
+                                    "✓ ${folderPass.found.size} found",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = Color(0xFF7FE0A8),
+                                )
+                                AlbumCoverFinder.FolderPass.Idle -> Unit
+                            }
+                        }
+                        if (!folderGranted) {
+                            Button(onClick = onAllowFolder, modifier = Modifier.fillMaxWidth()) { Text("Allow access to your music folder") }
+                            Text(
+                                "Opens Android's folder picker: choose Music, then Use this folder. Once only — Spindle only reads it.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            (folderPass as? AlbumCoverFinder.FolderPass.Done)?.found?.takeIf { it.isNotEmpty() }?.let { found ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    found.take(5).forEach { album ->
+                                        AlbumArtwork(album = album, fetchArtworkUri = fetchArtworkUri, modifier = Modifier.size(52.dp), cornerRadiusDp = 8)
+                                    }
+                                }
+                            }
+                            Text(
+                                "On the phone — nothing is sent. New albums are checked by themselves.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    // Step 2: Deezer, for what's still missing.
+                    StepCard(number = 2, highlighted = false) {
+                        Text(
+                            if (missingCount > 0) "From Deezer, for the other ${countLabel(missingCount, "album")}" else "Nothing left for Deezer",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text("Album and artist names are sent. Keeps running if you close this.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Button(onClick = onStart, enabled = missingCount > 0, modifier = Modifier.fillMaxWidth()) { Text("Find on Deezer") }
+                    }
                 }
                 is AlbumCoverFinder.Scan.Running -> {
                     Text("Finding covers…", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
@@ -272,5 +332,144 @@ fun MissingCoversButton(count: Int, onClick: () -> Unit, modifier: Modifier = Mo
             color = primary,
             modifier = Modifier.semantics { contentDescription = "${countLabel(count, "album")} without a cover" },
         )
+    }
+}
+
+@Composable
+private fun StepCard(number: Int, highlighted: Boolean, content: @Composable () -> Unit) {
+    val primary = MaterialTheme.colorScheme.primary
+    val shape = RoundedCornerShape(18.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(if (highlighted) primary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, if (highlighted) primary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant, shape)
+            .padding(14.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(26.dp).clip(CircleShape).background(if (highlighted) primary else MaterialTheme.colorScheme.surfaceContainerHighest),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "$number",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (highlighted) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() }
+    }
+}
+
+/** Android's folder picker, opening on Music; keeps a read grant on the chosen folder. */
+@Composable
+fun rememberMusicFolderPicker(onGranted: (Uri) -> Unit): () -> Unit {
+    val context = LocalContext.current
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            onGranted(uri)
+        }
+    }
+    return {
+        val music = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", "primary:Music")
+        launcher.launch(music)
+    }
+}
+
+/** 10B: where an album's cover can come from — its folder's images, Deezer, or any picture. */
+@Composable
+fun AlbumCoverSheet(
+    folderGranted: Boolean,
+    images: List<FolderImage>?,
+    onAllowFolder: () -> Unit,
+    onUseImage: (FolderImage) -> Unit,
+    onDeezer: () -> Unit,
+    onPhone: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text("Album cover", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(
+                "IN THIS ALBUM’S FOLDER",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            when {
+                !folderGranted -> OutlinedButton(onClick = onAllowFolder, modifier = Modifier.fillMaxWidth()) {
+                    Text("Allow access to your music folder")
+                }
+                images == null -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                images.isEmpty() -> Text(
+                    "No images in this album’s folder",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                else -> {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        items(images, key = { it.uri.toString() }) { image ->
+                            Column(
+                                modifier = Modifier.width(100.dp).clickable(role = Role.Button, onClickLabel = "Use ${image.name}") { onUseImage(image) },
+                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                AsyncImage(
+                                    model = image.uri,
+                                    contentDescription = image.name,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .size(100.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .then(
+                                            if (image == images.first()) {
+                                                Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                                            } else {
+                                                Modifier
+                                            },
+                                        ),
+                                )
+                                Text(image.name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                    Text("Tap one to use it.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer),
+            ) {
+                SourceRow(Icons.Default.ImageSearch, "Find on Deezer", "Album and artist names are sent", onDeezer)
+                SourceRow(Icons.Default.Image, "Choose from phone", "Any picture, with Android’s photo picker", onPhone)
+            }
+            Text(
+                "Saved in Spindle only — your music files aren’t changed.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }

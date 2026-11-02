@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -77,6 +78,16 @@ class SettingsRepository @Inject constructor(
             val current = prefs[boostedTrackKeysKey].orEmpty()
             prefs[boostedTrackKeysKey] = if (boosted) current + trackKey.toString() else current - trackKey.toString()
         }
+    }
+
+    // The music folder granted once with Android's folder picker, for cover images next to
+    // the songs (mockup 10A). A tree URI with a persisted read grant; null = not granted.
+    private val musicFolderTreeKey = stringPreferencesKey("music_folder_tree_uri")
+
+    val musicFolderTree: Flow<String?> = context.dataStore.data.map { prefs -> prefs[musicFolderTreeKey] }
+
+    suspend fun setMusicFolderTree(uri: String?) {
+        context.dataStore.edit { prefs -> if (uri == null) prefs.remove(musicFolderTreeKey) else prefs[musicFolderTreeKey] = uri }
     }
 
     // "N albums have no cover" on Albums: hidden at that N; shows again only if more appear.

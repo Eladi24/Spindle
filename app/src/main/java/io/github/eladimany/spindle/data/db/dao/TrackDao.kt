@@ -54,6 +54,10 @@ interface TrackDao {
     )
     fun search(query: String, limit: Int = 50): Flow<List<TrackEntity>>
 
+    /** How many albums share a folder — a folder image is only one album's cover when this is 1. */
+    @Query("SELECT COUNT(DISTINCT albumId) FROM tracks WHERE folderId = :folderId")
+    suspend fun albumCountInFolder(folderId: Long): Int
+
     @Query("SELECT * FROM tracks WHERE id = :id")
     suspend fun getById(id: Long): TrackEntity?
 
