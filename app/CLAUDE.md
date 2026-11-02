@@ -12,11 +12,22 @@ Trust that file over any assumption about BluOS.
 
 ## ▶ Next session — start here (updated 2026-11-02)
 
-**State:** **0.9.10-beta (versionCode 11)** = `Spindle-0.9.10-beta.apk`, committed and pushed
-(0.9.9-beta = 5f93de6). Much was checked on the A73 (debug), nothing yet on the S25+ or in a
+**State:** **0.9.11-beta (versionCode 12)** = `Spindle-0.9.11-beta.apk`, committed (not pushed)
+(0.9.10-beta = f03837a). Much was checked on the A73 (debug), nothing yet on the S25+ or in a
 car. Ask for the checklist (R1–R10 in `docs/PHASE3-NODE-TESTS.md`), then remind the user of
-P2–P6, Q1, Q2 (they asked to be reminded). The A73 has a test album `Music/Spindle Test Album`. S25+ news: Gemini Nano now available there (after the model
+P2–P6, Q1, Q2 (they asked to be reminded). Test album removed from the A73 (2026-11-02). S25+ news: Gemini Nano now available there (after the model
 download); the free-key engine works well.
+
+**2026-11-02 evening (0.9.11-beta, checked on the A73):** Play on sheet —
+ON YOUR NETWORK (+ manual IP) now above BLUETOOTH; the sheet scrolls as a whole and the
+Bluetooth rows sit in their own scroll area (`BluetoothListMaxHeight` 290 dp ≈ 3½ rows; the
+A73 has 8+ paired devices, which hid the network section). One Play on button: the title-bar
+pill (`LocalOutputChip`) is null while the mini-player shows its own pill (`hasPlayer &&
+!finished`); the "Queue finished" mini-player has no pill, so the title bar shows it then.
+Test tip: `QueueStore` uses AtomicFile — a `queue.json.bak` is *its* backup and gets
+restored, so stash a copy under another name when clearing the queue. "Pair new ›" removed
+(user: redundant). User asked to list only *available* paired devices; Android can't tell
+if a paired, unconnected device is on/in range, so they chose to keep listing all paired.
 
 **2026-11-02, built:**
 - **Audio-route sync** (car played on the phone speaker until an app restart; picker said "This

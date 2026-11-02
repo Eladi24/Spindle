@@ -67,8 +67,6 @@ class OutputPickerViewModel @Inject constructor(
     /** A paired device that isn't connected: Android's output switcher connects it. */
     fun connectBluetooth() = pairedBluetooth.openOutputSwitcher()
 
-    fun pairNewBluetooth() = pairedBluetooth.openBluetoothSettings()
-
     private val _players = MutableStateFlow<List<BluOsPlayer>>(emptyList())
     val players: StateFlow<List<BluOsPlayer>> = _players.asStateFlow()
 

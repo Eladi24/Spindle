@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -137,9 +139,12 @@ fun OutputPickerSheet(
                     .padding(bottom = 28.dp),
             )
         } else {
+            // Scrolls as a whole, so nothing (e.g. a long Bluetooth list) can push the
+            // rest out of reach on a short screen.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp)
                     .padding(bottom = 28.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -188,52 +193,6 @@ fun OutputPickerSheet(
                             onClick = { viewModel.selectDevice(route) },
                         )
                     }
-                }
-
-                // BLUETOOTH (mockup 8A): connected devices play here as before; paired ones
-                // that aren't connected get "Connect", which opens Android's output switcher.
-                val connectedBluetooth = otherRoutes.filter { it.kind == LocalRouteKind.BLUETOOTH }
-                val connectedAddresses = connectedBluetooth.mapNotNull { it.address }.toSet()
-                val pairedOnly = pairedDevices.filter { it.address !in connectedAddresses }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("BLUETOOTH", Modifier.weight(1f))
-                    TextButton(onClick = viewModel::pairNewBluetooth, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                        Text("Pair new ›")
-                    }
-                }
-                connectedBluetooth.forEach { route ->
-                    OutputCard(
-                        icon = Icons.Default.Bluetooth,
-                        title = viewModel.routeDisplayName(route),
-                        subtitle = "Connected",
-                        isActive = target == OutputTarget.Local && activeRoute?.id == route.id,
-                        onClick = { viewModel.selectDevice(route) },
-                    )
-                }
-                pairedOnly.forEach { device ->
-                    OutputCard(
-                        icon = Icons.Default.Bluetooth,
-                        title = device.name,
-                        subtitle = "Paired · not connected",
-                        isActive = false,
-                        action = "Connect",
-                        onClick = viewModel::connectBluetooth,
-                    )
-                }
-                if (!hasBluetoothConnectPermission) {
-                    TextButton(
-                        onClick = { permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)) },
-                        contentPadding = PaddingValues(horizontal = 6.dp),
-                    ) {
-                        Text("Show your Bluetooth devices")
-                    }
-                } else if (connectedBluetooth.isEmpty() && pairedOnly.isEmpty()) {
-                    Text(
-                        "No paired Bluetooth speakers or headphones.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 6.dp),
-                    )
                 }
 
                 NetworkHeader(
@@ -302,10 +261,67 @@ fun OutputPickerSheet(
                 } else {
                     ManualEntryCard(onClick = { showManualEntry = true })
                 }
+
+                // BLUETOOTH (mockup 8A): connected devices play here as before; paired ones
+                // that aren't connected get "Connect", which opens Android's output switcher.
+                val connectedBluetooth = otherRoutes.filter { it.kind == LocalRouteKind.BLUETOOTH }
+                val connectedAddresses = connectedBluetooth.mapNotNull { it.address }.toSet()
+                val pairedOnly = pairedDevices.filter { it.address !in connectedAddresses }
+                SectionLabel("BLUETOOTH", Modifier.padding(top = 12.dp))
+                // Its own scroll area, about 3½ rows tall, so many paired devices scroll
+                // inside it (the half-visible row shows there's more).
+                if (connectedBluetooth.isNotEmpty() || pairedOnly.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = BluetoothListMaxHeight)
+                            .clip(MaterialTheme.shapes.large)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        connectedBluetooth.forEach { route ->
+                            OutputCard(
+                                icon = Icons.Default.Bluetooth,
+                                title = viewModel.routeDisplayName(route),
+                                subtitle = "Connected",
+                                isActive = target == OutputTarget.Local && activeRoute?.id == route.id,
+                                onClick = { viewModel.selectDevice(route) },
+                            )
+                        }
+                        pairedOnly.forEach { device ->
+                            OutputCard(
+                                icon = Icons.Default.Bluetooth,
+                                title = device.name,
+                                subtitle = "Paired · not connected",
+                                isActive = false,
+                                action = "Connect",
+                                onClick = viewModel::connectBluetooth,
+                            )
+                        }
+                    }
+                }
+                if (!hasBluetoothConnectPermission) {
+                    TextButton(
+                        onClick = { permissionLauncher.launch(arrayOf(Manifest.permission.BLUETOOTH_CONNECT)) },
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text("Show your Bluetooth devices")
+                    }
+                } else if (connectedBluetooth.isEmpty() && pairedOnly.isEmpty()) {
+                    Text(
+                        "No paired Bluetooth speakers or headphones.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 6.dp),
+                    )
+                }
             }
         }
     }
 }
+
+/** Card 72 dp + 12 dp gap: 3 rows and half of the 4th. */
+private val BluetoothListMaxHeight = 290.dp
 
 @Composable
 private fun OutputCard(
@@ -454,7 +470,7 @@ private fun PermissionRequestCard(onGrant: () -> Unit) {
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
-            "Also asks for Bluetooth access, so a connected device can show its real name above.",
+            "Also asks for Bluetooth access, so your Bluetooth devices show by name below.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

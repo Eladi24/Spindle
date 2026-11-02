@@ -206,7 +206,9 @@ fun AppNavHost() {
             val overlayBottom = innerPadding.calculateBottomPadding()
             CompositionLocalProvider(
                 LocalBottomOverlayPadding provides if (showMiniPlayer) overlayBottom else 0.dp,
-                LocalOutputChip provides outputChip,
+                // One Play on button at a time: the mini-player's pill while it shows one,
+                // else the title bar's (fresh start, empty queue, "Queue finished").
+                LocalOutputChip provides outputChip.takeIf { !hasPlayer || queueState.finished },
             ) {
                 NavHost(
                     navController = navController,
